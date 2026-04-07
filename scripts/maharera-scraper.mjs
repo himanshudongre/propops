@@ -3,15 +3,18 @@
 /**
  * PropOps MahaRERA Scraper
  *
- * Scrapes the Maharashtra Real Estate Regulatory Authority portal
- * for project details, builder information, and complaint data.
+ * Scrapes the Maharashtra Real Estate Regulatory Authority for project
+ * details, builder information, and complaint data.
  *
- * Data sources:
- * - Project search: https://maharera.maharashtra.gov.in/projects-search-result
- * - Promoter search: https://maharera.maharashtra.gov.in/promoters-search-result
+ * Two portals (tried in order):
+ *   Portal A (Primary): maharera.maharashtra.gov.in — Drupal CMS, GET params,
+ *     HTML tables, no CAPTCHA, simpler to scrape.
+ *   Portal B (Fallback): maharerait.mahaonline.gov.in — ASP.NET MVC, anti-forgery
+ *     tokens, session state. More detailed data but harder to scrape.
  *
  * Usage:
  *   node scripts/maharera-scraper.mjs search-project --name "Godrej Infinity"
+ *   node scripts/maharera-scraper.mjs search-project --name "Godrej" --district "Pune"
  *   node scripts/maharera-scraper.mjs search-promoter --name "Godrej Properties"
  *   node scripts/maharera-scraper.mjs project-details --rera-id "P52100012345"
  *   node scripts/maharera-scraper.mjs complaints --promoter "Godrej Properties"
@@ -29,40 +32,48 @@ const ROOT = resolve(__dirname, '..');
 const CACHE_DIR = resolve(ROOT, 'data/builder-cache');
 const CACHE_VALIDITY_DAYS = 30;
 
-const MAHARERA_BASE = 'https://maharera.maharashtra.gov.in';
-const MAHARERA_PROJECT_SEARCH = `${MAHARERA_BASE}/projects-search-result`;
-const MAHARERA_PROMOTER_SEARCH = `${MAHARERA_BASE}/promoters-search-result`;
+// Portal A (Drupal — primary, simpler)
+const PORTAL_A = {
+  base: 'https://maharera.maharashtra.gov.in',
+  projectSearch: 'https://maharera.maharashtra.gov.in/projects-search-result',
+  promoterSearch: 'https://maharera.maharashtra.gov.in/promoters-search-result',
+  mapSearch: 'https://maharera.maharashtra.gov.in/map-projects-search-result',
+  statistics: 'https://maharera.maharashtra.gov.in/statistics'
+};
+
+// Portal B (ASP.NET — fallback, more detailed)
+const PORTAL_B = {
+  base: 'https://maharerait.mahaonline.gov.in',
+  search: 'https://maharerait.mahaonline.gov.in/SearchList/Search',
+  searchResults: 'https://maharerait.mahaonline.gov.in/searchlist/searchlist'
+};
 
 // ─── Cache Helpers ──────────────────────────────────────────
 
 function getCachePath(type, key) {
   const slug = key.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  return resolve(CACHE_DIR, `${type}-${slug}.json`);
+  return resolve(CACHE_DIR, `maharera-${type}-${slug}.json`);
 }
 
 function readCache(type, key) {
   const path = getCachePath(type, key);
   if (!existsSync(path)) return null;
-
-  const data = JSON.parse(readFileSync(path, 'utf-8'));
-  const age = (Date.now() - new Date(data._cached_at).getTime()) / (1000 * 60 * 60 * 24);
-
-  if (age > CACHE_VALIDITY_DAYS) {
-    console.error(`Cache expired for ${type}/${key} (${Math.round(age)} days old)`);
-    return null;
-  }
-
-  console.error(`Cache hit for ${type}/${key} (${Math.round(age)} days old)`);
-  return data;
+  try {
+    const data = JSON.parse(readFileSync(path, 'utf-8'));
+    const age = (Date.now() - new Date(data._cached_at).getTime()) / (1000 * 60 * 60 * 24);
+    if (age > CACHE_VALIDITY_DAYS) return null;
+    console.error(`Cache hit for maharera/${type}/${key} (${Math.round(age)}d old)`);
+    return data;
+  } catch { return null; }
 }
 
 function writeCache(type, key, data) {
   if (!existsSync(CACHE_DIR)) mkdirSync(CACHE_DIR, { recursive: true });
-  const enriched = { ...data, _cached_at: new Date().toISOString(), _cache_key: key };
+  const enriched = { ...data, _cached_at: new Date().toISOString(), _cache_key: `${type}/${key}` };
   writeFileSync(getCachePath(type, key), JSON.stringify(enriched, null, 2));
 }
 
-// ─── Browser Helpers ────────────────────────────────────────
+// ─── Browser Helper ─────────────────────────────────────────
 
 async function launchBrowser() {
   return chromium.launch({
@@ -71,104 +82,263 @@ async function launchBrowser() {
   });
 }
 
-async function waitAndRetry(page, selector, maxRetries = 3) {
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      await page.waitForSelector(selector, { timeout: 10000 });
-      return true;
-    } catch {
-      console.error(`Retry ${i + 1}/${maxRetries} waiting for ${selector}`);
-      await page.reload();
-      await page.waitForLoadState('networkidle');
-    }
-  }
-  return false;
-}
+// ─── Portal A: Project Search (Drupal — primary) ───────────
 
-// ─── Project Search ─────────────────────────────────────────
-
-async function searchProjects(query, options = {}) {
-  const cached = readCache('project-search', query);
-  if (cached) return cached;
-
+async function searchProjectsPortalA(query, options = {}) {
   const browser = await launchBrowser();
   const page = await browser.newPage();
 
   try {
-    console.error(`Navigating to MahaRERA project search...`);
-    await page.goto(MAHARERA_PROJECT_SEARCH, { waitUntil: 'networkidle', timeout: 30000 });
-
-    // Look for search input and enter query
-    const searchInput = await page.$('input[type="text"], input[name*="search"], input[name*="project"], #edit-field-project-name-value');
-    if (searchInput) {
-      await searchInput.fill(query);
+    // Portal A supports GET params — try direct URL first
+    let url = PORTAL_A.projectSearch;
+    if (query.startsWith('P') && /^P\d+/.test(query)) {
+      // Looks like a RERA certificate number — direct lookup
+      url += `?certificate_no=${encodeURIComponent(query)}`;
+      console.error(`[Portal A] Direct lookup: ${query}`);
+    } else {
+      console.error(`[Portal A] Searching projects: "${query}"`);
     }
 
-    // If district filter available
-    if (options.district) {
-      const districtSelect = await page.$('select[name*="district"], #edit-field-district-target-id');
-      if (districtSelect) {
-        await districtSelect.selectOption({ label: options.district });
+    await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+
+    // If not direct lookup, fill the search form
+    if (!query.startsWith('P') || !/^P\d+/.test(query)) {
+      // Try various input selectors (Drupal Views forms vary)
+      const selectors = [
+        'input[name*="project_name"]',
+        'input[name*="field_project_name"]',
+        '#edit-field-project-name-value',
+        'input[type="text"]'
+      ];
+
+      for (const sel of selectors) {
+        const input = await page.$(sel);
+        if (input) {
+          await input.fill(query);
+          break;
+        }
+      }
+
+      // Set district filter if provided
+      if (options.district) {
+        const districtSelectors = [
+          'select[name*="district"]',
+          '#edit-field-district-target-id',
+          'select[name*="field_district"]'
+        ];
+        for (const sel of districtSelectors) {
+          const select = await page.$(sel);
+          if (select) {
+            try {
+              await select.selectOption({ label: new RegExp(options.district, 'i') });
+            } catch {
+              // Try by value if label fails
+              const optionTexts = await page.$$eval(`${sel} option`, opts =>
+                opts.map(o => ({ value: o.value, text: o.textContent.trim() }))
+              );
+              const match = optionTexts.find(o =>
+                o.text.toLowerCase().includes(options.district.toLowerCase())
+              );
+              if (match) await select.selectOption(match.value);
+            }
+            break;
+          }
+        }
+      }
+
+      // Submit the form
+      const submitSelectors = [
+        'input[type="submit"]',
+        'button[type="submit"]',
+        '#edit-submit-projects-search',
+        '.form-submit'
+      ];
+      for (const sel of submitSelectors) {
+        const btn = await page.$(sel);
+        if (btn) {
+          await btn.click();
+          await page.waitForLoadState('networkidle');
+          break;
+        }
       }
     }
 
-    // Submit search
-    const submitBtn = await page.$('input[type="submit"], button[type="submit"], .form-submit');
-    if (submitBtn) {
-      await submitBtn.click();
-      await page.waitForLoadState('networkidle');
-    }
-
-    // Wait for results
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(2000);
 
     // Extract results from table
     const results = await page.evaluate(() => {
-      const rows = document.querySelectorAll('table tbody tr, .views-table tbody tr, .view-content .views-row');
+      const tables = document.querySelectorAll('table');
       const data = [];
 
-      rows.forEach(row => {
-        const cells = row.querySelectorAll('td, .views-field');
-        if (cells.length >= 4) {
-          const getText = (idx) => cells[idx]?.textContent?.trim() || '';
-          data.push({
-            certificate_no: getText(0),
-            project_name: getText(1),
-            promoter_name: getText(2),
-            district: getText(3),
-            taluka: cells.length > 4 ? getText(4) : '',
-            completion_date: cells.length > 5 ? getText(5) : '',
-            project_url: cells[0]?.querySelector('a')?.href || ''
+      for (const table of tables) {
+        const headers = Array.from(table.querySelectorAll('thead th, tr:first-child th'))
+          .map(th => th.textContent.trim().toLowerCase());
+
+        if (headers.length < 3) continue;
+
+        const rows = table.querySelectorAll('tbody tr');
+        for (const row of rows) {
+          const cells = Array.from(row.querySelectorAll('td'));
+          if (cells.length < 3) continue;
+
+          const entry = {};
+          cells.forEach((cell, i) => {
+            const header = headers[i] || `col_${i}`;
+            entry[header.replace(/[^a-z0-9_]/g, '_')] = cell.textContent.trim();
+
+            // Capture links
+            const link = cell.querySelector('a');
+            if (link) entry[`${header.replace(/[^a-z0-9_]/g, '_')}_url`] = link.href;
           });
+
+          data.push(entry);
         }
-      });
+      }
+
+      // If no table found, try Drupal Views rows
+      if (data.length === 0) {
+        const viewRows = document.querySelectorAll('.views-row, .view-content > div');
+        for (const row of viewRows) {
+          const fields = {};
+          row.querySelectorAll('.views-field, .field').forEach(field => {
+            const label = field.querySelector('.views-label, .field--label')?.textContent?.trim() || '';
+            const value = field.querySelector('.field-content, .field--item')?.textContent?.trim()
+              || field.textContent.replace(label, '').trim();
+            if (label) fields[label.toLowerCase().replace(/[^a-z0-9_]/g, '_')] = value;
+          });
+          if (Object.keys(fields).length > 0) data.push(fields);
+        }
+      }
 
       return data;
     });
 
-    const output = {
-      query,
-      source: 'MahaRERA',
-      source_url: MAHARERA_PROJECT_SEARCH,
-      scraped_at: new Date().toISOString(),
-      results_count: results.length,
-      results
+    // Normalize field names across different table formats
+    const normalized = results.map(r => ({
+      certificate_no: r.certificate_no_ || r.certificate_no || r.registration_no || r.col_0 || '',
+      project_name: r.project_name || r.name_of_the_project || r.col_1 || '',
+      promoter_name: r.promoter_name || r.name_of_the_promoter || r.col_2 || '',
+      district: r.district || r.col_3 || '',
+      taluka: r.taluka || r.col_4 || '',
+      division: r.division || r.col_5 || '',
+      pincode: r.pincode || '',
+      proposed_completion: r.proposed_date_of_completion || r.completion_date || r.col_6 || '',
+      certificate_status: r.certificate_status || r.status || '',
+      last_modified: r.last_modified || r.last_modified_date || '',
+      detail_url: r.certificate_no__url || r.project_name_url || ''
+    }));
+
+    return {
+      portal: 'A',
+      source_url: PORTAL_A.projectSearch,
+      results_count: normalized.length,
+      results: normalized
     };
 
-    writeCache('project-search', query, output);
-    return output;
-
-  } catch (error) {
-    console.error(`Error searching MahaRERA projects: ${error.message}`);
-    return { query, source: 'MahaRERA', error: error.message, results: [] };
   } finally {
     await browser.close();
   }
 }
 
+// ─── Portal B: Project Search (ASP.NET — fallback) ─────────
+
+async function searchProjectsPortalB(query, options = {}) {
+  const browser = await launchBrowser();
+  const page = await browser.newPage();
+
+  try {
+    console.error(`[Portal B] Searching: "${query}"`);
+    await page.goto(PORTAL_B.search, { waitUntil: 'networkidle', timeout: 30000 });
+
+    // Portal B uses ASP.NET MVC — fill the search form
+    const searchInput = await page.$('input[name*="search"], input[type="text"], #SearchString');
+    if (searchInput) await searchInput.fill(query);
+
+    const submitBtn = await page.$('input[type="submit"], button[type="submit"], .btn-primary');
+    if (submitBtn) {
+      await submitBtn.click();
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(3000);
+    }
+
+    // Extract results
+    const results = await page.evaluate(() => {
+      const rows = document.querySelectorAll('table tbody tr, .table tbody tr');
+      return Array.from(rows).map(row => {
+        const cells = Array.from(row.querySelectorAll('td'));
+        if (cells.length < 3) return null;
+        const getText = i => cells[i]?.textContent?.trim() || '';
+        return {
+          certificate_no: getText(0),
+          project_name: getText(1),
+          promoter_name: getText(2),
+          district: cells.length > 3 ? getText(3) : '',
+          taluka: cells.length > 4 ? getText(4) : '',
+          proposed_completion: cells.length > 5 ? getText(5) : '',
+          detail_url: cells[0]?.querySelector('a')?.href || ''
+        };
+      }).filter(Boolean);
+    });
+
+    return {
+      portal: 'B',
+      source_url: PORTAL_B.search,
+      results_count: results.length,
+      results
+    };
+
+  } finally {
+    await browser.close();
+  }
+}
+
+// ─── Combined Search (A → B fallback) ──────────────────────
+
+async function searchProjects(query, options = {}) {
+  const cacheKey = `${query}-${options.district || 'all'}`;
+  const cached = readCache('project-search', cacheKey);
+  if (cached) return cached;
+
+  let result;
+
+  // Try Portal A first (simpler, Drupal)
+  try {
+    result = await searchProjectsPortalA(query, options);
+    if (result.results_count > 0) {
+      console.error(`[Portal A] Found ${result.results_count} results`);
+    } else {
+      console.error(`[Portal A] No results, trying Portal B...`);
+      result = await searchProjectsPortalB(query, options);
+    }
+  } catch (err) {
+    console.error(`[Portal A] Error: ${err.message}. Trying Portal B...`);
+    try {
+      result = await searchProjectsPortalB(query, options);
+    } catch (err2) {
+      console.error(`[Portal B] Also failed: ${err2.message}`);
+      result = { portal: 'none', error: `Portal A: ${err.message}; Portal B: ${err2.message}`, results: [] };
+    }
+  }
+
+  const output = {
+    query,
+    district: options.district || null,
+    source: 'MahaRERA',
+    portal: result.portal,
+    source_url: result.source_url || '',
+    scraped_at: new Date().toISOString(),
+    results_count: result.results?.length || 0,
+    results: result.results || [],
+    ...(result.error && { error: result.error })
+  };
+
+  if (output.results_count > 0) writeCache('project-search', cacheKey, output);
+  return output;
+}
+
 // ─── Promoter Search ────────────────────────────────────────
 
-async function searchPromoters(name, options = {}) {
+async function searchPromoters(name) {
   const cached = readCache('promoter-search', name);
   if (cached) return cached;
 
@@ -176,67 +346,70 @@ async function searchPromoters(name, options = {}) {
   const page = await browser.newPage();
 
   try {
-    console.error(`Navigating to MahaRERA promoter search...`);
-    await page.goto(MAHARERA_PROMOTER_SEARCH, { waitUntil: 'networkidle', timeout: 30000 });
+    console.error(`[Portal A] Searching promoters: "${name}"`);
+    await page.goto(PORTAL_A.promoterSearch, { waitUntil: 'networkidle', timeout: 30000 });
 
-    // Look for promoter name input
-    const nameInput = await page.$('input[type="text"], input[name*="promoter"], input[name*="search"], #edit-field-promoter-name-value');
-    if (nameInput) {
-      await nameInput.fill(name);
+    // Fill promoter name
+    const selectors = [
+      'input[name*="promoter"]',
+      '#edit-field-promoter-name-value',
+      'input[type="text"]'
+    ];
+    for (const sel of selectors) {
+      const input = await page.$(sel);
+      if (input) { await input.fill(name); break; }
     }
 
-    // Submit search
-    const submitBtn = await page.$('input[type="submit"], button[type="submit"], .form-submit');
-    if (submitBtn) {
-      await submitBtn.click();
-      await page.waitForLoadState('networkidle');
+    // Submit
+    const submitSelectors = ['input[type="submit"]', 'button[type="submit"]', '.form-submit'];
+    for (const sel of submitSelectors) {
+      const btn = await page.$(sel);
+      if (btn) {
+        await btn.click();
+        await page.waitForLoadState('networkidle');
+        break;
+      }
     }
+    await page.waitForTimeout(2000);
 
-    await page.waitForTimeout(3000);
-
-    // Extract promoter results
+    // Extract results
     const results = await page.evaluate(() => {
-      const rows = document.querySelectorAll('table tbody tr, .views-table tbody tr, .view-content .views-row');
-      const data = [];
-
-      rows.forEach(row => {
-        const cells = row.querySelectorAll('td, .views-field');
-        if (cells.length >= 2) {
-          const getText = (idx) => cells[idx]?.textContent?.trim() || '';
-          data.push({
-            promoter_name: getText(0),
-            registration_no: getText(1),
-            district: cells.length > 2 ? getText(2) : '',
-            projects_count: cells.length > 3 ? getText(3) : '',
-            promoter_url: cells[0]?.querySelector('a')?.href || ''
-          });
-        }
-      });
-
-      return data;
+      const rows = document.querySelectorAll('table tbody tr');
+      return Array.from(rows).map(row => {
+        const cells = Array.from(row.querySelectorAll('td'));
+        if (cells.length < 2) return null;
+        const getText = i => cells[i]?.textContent?.trim() || '';
+        return {
+          promoter_name: getText(0),
+          registration_no: getText(1),
+          district: cells.length > 2 ? getText(2) : '',
+          projects_count: cells.length > 3 ? getText(3) : '',
+          detail_url: cells[0]?.querySelector('a')?.href || ''
+        };
+      }).filter(Boolean);
     });
 
     const output = {
       query: name,
       source: 'MahaRERA',
-      source_url: MAHARERA_PROMOTER_SEARCH,
+      source_url: PORTAL_A.promoterSearch,
       scraped_at: new Date().toISOString(),
       results_count: results.length,
       results
     };
 
-    writeCache('promoter-search', name, output);
+    if (results.length > 0) writeCache('promoter-search', name, output);
     return output;
 
   } catch (error) {
-    console.error(`Error searching MahaRERA promoters: ${error.message}`);
+    console.error(`Promoter search error: ${error.message}`);
     return { query: name, source: 'MahaRERA', error: error.message, results: [] };
   } finally {
     await browser.close();
   }
 }
 
-// ─── Project Details ────────────────────────────────────────
+// ─── Project Details (by RERA ID) ───────────────────────────
 
 async function getProjectDetails(reraId) {
   const cached = readCache('project-details', reraId);
@@ -246,63 +419,56 @@ async function getProjectDetails(reraId) {
   const page = await browser.newPage();
 
   try {
-    // Search by RERA ID
-    console.error(`Looking up RERA project: ${reraId}`);
-    await page.goto(MAHARERA_PROJECT_SEARCH, { waitUntil: 'networkidle', timeout: 30000 });
+    // Try Portal A direct URL with certificate_no param
+    const url = `${PORTAL_A.projectSearch}?certificate_no=${encodeURIComponent(reraId)}`;
+    console.error(`[Portal A] Direct lookup: ${reraId}`);
+    await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+    await page.waitForTimeout(2000);
 
-    const searchInput = await page.$('input[type="text"]');
-    if (searchInput) {
-      await searchInput.fill(reraId);
-    }
-
-    const submitBtn = await page.$('input[type="submit"], button[type="submit"], .form-submit');
-    if (submitBtn) {
-      await submitBtn.click();
-      await page.waitForLoadState('networkidle');
-    }
-
-    await page.waitForTimeout(3000);
-
-    // Click on the first result to get details
-    const firstLink = await page.$('table tbody tr:first-child a, .views-row:first-child a');
-    if (firstLink) {
-      await firstLink.click();
+    // Click through to detail page if available
+    const detailLink = await page.$('table tbody tr:first-child a, .views-row:first-child a');
+    if (detailLink) {
+      await detailLink.click();
       await page.waitForLoadState('networkidle');
       await page.waitForTimeout(2000);
     }
 
-    // Extract project details from detail page
+    // Extract all key-value pairs from the detail page
     const details = await page.evaluate(() => {
-      const getData = (label) => {
-        const allElements = document.querySelectorAll('.field, .field--label, tr, dt, dd, .views-field');
-        for (const el of allElements) {
-          if (el.textContent?.includes(label)) {
-            const value = el.nextElementSibling?.textContent?.trim()
-              || el.querySelector('.field--item, dd, td:last-child')?.textContent?.trim()
-              || '';
-            if (value && value !== label) return value;
+      const data = {};
+
+      // Method 1: Drupal field display
+      document.querySelectorAll('.field, .field--item').forEach(field => {
+        const label = field.querySelector('.field--label, .field__label');
+        const value = field.querySelector('.field--item, .field__item');
+        if (label && value) {
+          const key = label.textContent.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
+          data[key] = value.textContent.trim();
+        }
+      });
+
+      // Method 2: Table rows with label-value pairs
+      document.querySelectorAll('table tr, dl dt').forEach(el => {
+        if (el.tagName === 'DT') {
+          const dd = el.nextElementSibling;
+          if (dd && dd.tagName === 'DD') {
+            const key = el.textContent.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
+            data[key] = dd.textContent.trim();
+          }
+        } else {
+          const cells = el.querySelectorAll('td, th');
+          if (cells.length === 2) {
+            const key = cells[0].textContent.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
+            data[key] = cells[1].textContent.trim();
           }
         }
-        return '';
-      };
+      });
 
-      return {
-        project_name: getData('Project Name') || getData('Name of the Project') || document.querySelector('h1, .page-title')?.textContent?.trim(),
-        rera_id: getData('Certificate No') || getData('Registration No') || getData('RERA ID'),
-        promoter_name: getData('Promoter Name') || getData('Name of the Promoter'),
-        district: getData('District'),
-        taluka: getData('Taluka'),
-        village: getData('Village'),
-        pincode: getData('Pincode'),
-        proposed_completion: getData('Proposed Date of Completion') || getData('Proposed Completion'),
-        registration_date: getData('Registration Date') || getData('Date of Registration'),
-        total_units: getData('Total Units') || getData('Number of Units'),
-        total_buildings: getData('Total Buildings') || getData('Number of Buildings'),
-        total_area: getData('Total Area') || getData('Plot Area'),
-        project_type: getData('Project Type') || getData('Type'),
-        project_status: getData('Status') || getData('Project Status'),
-        last_modified: getData('Last Modified') || getData('Modified Date')
-      };
+      // Also grab the page title
+      const title = document.querySelector('h1, .page-title, .node-title');
+      if (title) data._page_title = title.textContent.trim();
+
+      return data;
     });
 
     const output = {
@@ -310,18 +476,59 @@ async function getProjectDetails(reraId) {
       source: 'MahaRERA',
       source_url: page.url(),
       scraped_at: new Date().toISOString(),
-      details
+      details: {
+        project_name: details.project_name || details.name_of_the_project || details._page_title || '',
+        rera_id: details.certificate_no || details.registration_no || reraId,
+        promoter_name: details.promoter_name || details.name_of_the_promoter || '',
+        district: details.district || '',
+        taluka: details.taluka || '',
+        village: details.village || '',
+        pincode: details.pincode || '',
+        proposed_completion: details.proposed_date_of_completion || details.proposed_completion || '',
+        registration_date: details.registration_date || details.date_of_registration || '',
+        total_units: details.total_units || details.number_of_units || '',
+        total_buildings: details.total_buildings || details.number_of_buildings || '',
+        total_area: details.total_area || details.plot_area || '',
+        project_type: details.project_type || details.type || '',
+        project_status: details.status || details.project_status || details.certificate_status || '',
+        last_modified: details.last_modified || details.modified_date || '',
+        _all_fields: details
+      }
     };
 
     writeCache('project-details', reraId, output);
     return output;
 
   } catch (error) {
-    console.error(`Error fetching project details: ${error.message}`);
+    console.error(`Project details error: ${error.message}`);
     return { rera_id: reraId, source: 'MahaRERA', error: error.message, details: {} };
   } finally {
     await browser.close();
   }
+}
+
+// ─── Complaint Search ───────────────────────────────────────
+
+async function searchComplaints(promoterName) {
+  const cached = readCache('complaints', promoterName);
+  if (cached) return cached;
+
+  // First find all projects by this promoter
+  const promoterResults = await searchProjects(promoterName, {});
+
+  const output = {
+    promoter: promoterName,
+    source: 'MahaRERA',
+    scraped_at: new Date().toISOString(),
+    projects_found: promoterResults.results_count,
+    note: 'Complaint details require visiting individual project pages on MahaRERA. ' +
+          'This search returns project metadata. For complaints, use Playwright in ' +
+          'Claude Code to navigate each project page and look for complaint sections.',
+    projects: promoterResults.results
+  };
+
+  writeCache('complaints', promoterName, output);
+  return output;
 }
 
 // ─── Main CLI ───────────────────────────────────────────────
@@ -329,32 +536,33 @@ async function getProjectDetails(reraId) {
 async function main() {
   const args = process.argv.slice(2);
   const command = args[0];
-
-  const getArg = (flag) => {
-    const idx = args.indexOf(flag);
-    return idx >= 0 && idx + 1 < args.length ? args[idx + 1] : null;
-  };
+  const getArg = flag => { const i = args.indexOf(flag); return i >= 0 && i + 1 < args.length ? args[i + 1] : null; };
 
   if (!command) {
     console.log(`
 PropOps MahaRERA Scraper
 
+Scrapes Portal A (maharera.maharashtra.gov.in, Drupal) with Portal B
+(maharerait.mahaonline.gov.in, ASP.NET) as fallback.
+
 Usage:
   node scripts/maharera-scraper.mjs search-project --name "Project Name" [--district "Pune"]
   node scripts/maharera-scraper.mjs search-promoter --name "Builder Name"
   node scripts/maharera-scraper.mjs project-details --rera-id "P52100012345"
+  node scripts/maharera-scraper.mjs complaints --promoter "Godrej Properties"
 
 Options:
   --name        Search query (project or promoter name)
-  --rera-id     RERA registration/certificate number
+  --rera-id     RERA registration/certificate number (starts with P)
   --district    Filter by district (optional)
-  --json        Output raw JSON (default: formatted)
+  --promoter    Promoter/builder name for complaint search
+
+Results are cached for ${CACHE_VALIDITY_DAYS} days in data/builder-cache/.
     `);
     process.exit(0);
   }
 
   let result;
-
   switch (command) {
     case 'search-project':
       result = await searchProjects(getArg('--name') || '', { district: getArg('--district') });
@@ -365,6 +573,9 @@ Options:
     case 'project-details':
       result = await getProjectDetails(getArg('--rera-id') || '');
       break;
+    case 'complaints':
+      result = await searchComplaints(getArg('--promoter') || '');
+      break;
     default:
       console.error(`Unknown command: ${command}`);
       process.exit(1);
@@ -374,6 +585,6 @@ Options:
 }
 
 main().catch(err => {
-  console.error(`Fatal error: ${err.message}`);
+  console.error(`Fatal: ${err.message}`);
   process.exit(1);
 });
