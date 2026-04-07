@@ -1,0 +1,81 @@
+# PropOps Data Sources Configuration
+# Copy to sources.yml in project root and customize
+
+# Target state for government portals
+state: "Maharashtra"
+
+# IGRS Configuration (Registration Data)
+igrs:
+  enabled: true
+  portal_url: "https://freesearchigrservice.maharashtra.gov.in/"
+  # Districts to search (Maharashtra)
+  districts:
+    - name: "Pune"
+      code: "31"
+      villages:
+        - "Hinjewadi"
+        - "Baner"
+        - "Balewadi"
+        - "Wakad"
+        - "Keshav Nagar"
+    - name: "Mumbai Suburban"
+      code: "32"
+      villages: []  # Add your target areas
+  cache_validity_days: 7
+
+# MahaRERA Configuration
+maharera:
+  enabled: true
+  portal_url: "https://maharera.maharashtra.gov.in/"
+  search_url: "https://maharerait.mahaonline.gov.in/searchSourceInfo/searchSourceInfo"
+  cache_validity_days: 30
+
+# eCourts Configuration (Litigation)
+ecourts:
+  enabled: true
+  portal_url: "https://services.ecourts.gov.in/ecourtindia_v6/"
+  # State and district codes for targeted searches
+  state_code: "maharashtra"
+  district_codes:
+    - "pune"
+    - "mumbai"
+
+# Property Portal Scanning
+listing_portals:
+  - name: "99acres"
+    enabled: true
+    search_template: "site:99acres.com {config} in {area} under {budget_max}L"
+  - name: "MagicBricks"
+    enabled: true
+    search_template: "site:magicbricks.com {config} in {area} under {budget_max} lakhs"
+  - name: "Housing.com"
+    enabled: true
+    search_template: "site:housing.com {config} for sale in {area}"
+
+# Custom search queries (WebSearch)
+search_queries:
+  - name: "New launches - Pune"
+    query: "new residential projects launch Pune 2026"
+    enabled: true
+  - name: "Under construction - target areas"
+    query: "under construction flats {area} RERA registered"
+    enabled: true
+  - name: "Resale - target areas"
+    query: "resale flat {area} {config}"
+    enabled: true
+
+# Title filters for scan results
+title_filter:
+  positive:
+    - "BHK"
+    - "flat"
+    - "apartment"
+    - "residential"
+  negative:
+    - "commercial"
+    - "office"
+    - "shop"
+    - "warehouse"
+    - "PG"
+    - "hostel"
+    - "co-working"

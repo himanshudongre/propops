@@ -1,0 +1,48 @@
+# PropOps Buyer Profile
+# Copy to config/profile.yml and fill in your details
+
+buyer:
+  full_name: "Your Name"
+  email: "your@email.com"
+  phone: ""  # Optional, for report headers
+  location: "Mumbai, Maharashtra"
+
+purchase:
+  purpose: "self-use"  # self-use | investment | both
+  timeline: "6 months"  # when you plan to buy
+  budget_min_lakhs: 60
+  budget_max_lakhs: 90
+  loan_preapproval: false
+  loan_amount_lakhs: 0
+  family_size: 2
+
+preferences:
+  city: "Pune"
+  target_areas:
+    - "Hinjewadi"
+    - "Baner"
+    - "Keshav Nagar"
+    - "Wakad"
+  configurations:
+    - "2 BHK"
+    - "3 BHK"
+  min_carpet_sqft: 600
+  property_types:
+    - "under-construction"
+    - "ready-to-move"
+  must_haves:
+    - "RERA registered"
+    - "Near metro or upcoming metro"
+  deal_breakers:
+    - "No OC for ready property"
+    - "Builder with <3 completed projects"
+    - "Active litigation"
+
+builder_preferences:
+  trusted_builders: []  # e.g., ["Godrej Properties", "Lodha"]
+  blacklisted_builders: []  # e.g., ["XYZ Developers"]
+
+scoring_overrides: {}
+  # Override default weights if desired:
+  # price_fairness: 25  # default: 20
+  # builder_trust: 20   # default: 15

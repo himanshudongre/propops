@@ -1,0 +1,29 @@
+# User data (never committed)
+buyer-brief.md
+config/profile.yml
+modes/_profile.md
+sources.yml
+telegram-config.yml
+
+# Generated output
+data/
+reports/
+batch/tracker-additions/*.tsv
+batch/batch-state.tsv
+batch/batch-input.tsv
+batch/logs/
+
+# Node
+node_modules/
+package-lock.json
+
+# Dashboard binary
+dashboard/propops-dashboard
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

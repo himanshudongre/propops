@@ -1,0 +1,53 @@
+# Canonical property statuses for PropOps
+# All statuses in properties.md MUST match one of these
+
+statuses:
+  - name: "Evaluated"
+    description: "Report completed, pending decision"
+    aliases: ["evaluated", "eval", "reviewed"]
+    dashboard_group: "Pipeline"
+
+  - name: "Shortlisted"
+    description: "Buyer interested, investigating further"
+    aliases: ["shortlisted", "shortlist", "interested"]
+    dashboard_group: "Active"
+
+  - name: "Site Visit"
+    description: "Visit scheduled or completed"
+    aliases: ["site visit", "visited", "visit scheduled", "site-visit"]
+    dashboard_group: "Active"
+
+  - name: "Negotiating"
+    description: "In price negotiation"
+    aliases: ["negotiating", "negotiation", "in negotiation"]
+    dashboard_group: "Active"
+
+  - name: "Offer Made"
+    description: "Formal offer submitted"
+    aliases: ["offer made", "offered", "offer"]
+    dashboard_group: "Active"
+
+  - name: "Booked"
+    description: "Token/booking amount paid"
+    aliases: ["booked", "booking done", "token paid"]
+    dashboard_group: "Closed"
+
+  - name: "Registered"
+    description: "Sale deed registered"
+    aliases: ["registered", "registration done", "purchased", "bought"]
+    dashboard_group: "Closed"
+
+  - name: "Rejected"
+    description: "Buyer rejected (too expensive, red flags, etc.)"
+    aliases: ["rejected", "not interested", "dropped"]
+    dashboard_group: "Closed"
+
+  - name: "SKIP"
+    description: "Doesn't match buyer brief"
+    aliases: ["skip", "no match", "irrelevant"]
+    dashboard_group: "Closed"
+
+  - name: "Watching"
+    description: "On watchlist, monitoring price changes"
+    aliases: ["watching", "monitoring", "watchlist", "track"]
+    dashboard_group: "Pipeline"

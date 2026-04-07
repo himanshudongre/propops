@@ -1,0 +1,30 @@
+# PropOps Telegram Alert Configuration
+# Copy to telegram-config.yml in project root
+
+# Get your bot token from @BotFather on Telegram
+# Get your chat ID by messaging @userinfobot
+telegram:
+  bot_token: "YOUR_BOT_TOKEN_HERE"
+  chat_ids:
+    - "YOUR_CHAT_ID_HERE"
+
+# Alert preferences
+alerts:
+  enabled: true
+  min_score: 6.0           # Only alert for properties scoring >= this
+  max_price_lakhs: 100     # Budget ceiling for alerts
+
+  # Only alert for these locations (empty = all locations from buyer-brief)
+  locations: []
+
+  # Only alert for these configurations (empty = all from buyer-brief)
+  configs: []
+
+  # Alert for properties from these builders regardless of score
+  priority_builders: []
+
+  # Alert frequency
+  digest_mode: false       # true = daily digest, false = instant alerts
+  quiet_hours:
+    start: "22:00"         # No alerts after this time
+    end: "08:00"           # No alerts before this time
