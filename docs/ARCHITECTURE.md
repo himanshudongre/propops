@@ -93,6 +93,7 @@ Each mode is a complete markdown prompt file in `modes/`. CLAUDE.md routes user 
 | Litigation | `litigation.md` | Legal case search |
 | Due Diligence | `due-diligence.md` | Pre-purchase checklist |
 | Tracker | `tracker.md` | Pipeline management |
+| Finance | `finance.md` | Affordability, EMI, bank comparison, buy-vs-rent, tax, refinancing |
 | Alert | `alert.md` | Telegram configuration |
 | Batch | `batch.md` | Parallel evaluation |
 

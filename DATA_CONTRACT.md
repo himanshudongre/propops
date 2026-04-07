@@ -45,6 +45,7 @@ These files define system behavior. They can be replaced by updates without losi
 | `modes/trend.md` | Price trend & forecast mode |
 | `modes/compare.md` | Property comparison mode |
 | `modes/due-diligence.md` | Pre-purchase checklist mode |
+| `modes/finance.md` | Affordability, bank comparison, buy-vs-rent, tax, refinancing |
 | `modes/alert.md` | Telegram alert configuration mode |
 | `modes/tracker.md` | Pipeline viewer mode |
 | `modes/batch.md` | Batch evaluation mode |

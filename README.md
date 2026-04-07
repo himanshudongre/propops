@@ -148,22 +148,38 @@ Properties are scored across **10 weighted dimensions** on a scale of 1-10:
 ```
 propops/
 +-- CLAUDE.md                 # Agent instructions
-+-- buyer-brief.md            # Your requirements (create this)
++-- buyer-brief.md            # Your requirements (created during onboarding)
 +-- config/
 |   +-- profile.yml           # Your identity & preferences
-+-- modes/                    # 15 skill modes
-|   +-- _shared.md            # Scoring system & rules
-|   +-- evaluate.md           # 7-block evaluation
-|   +-- scan.md               # Property scanner
-|   +-- builder.md            # Builder reputation
-|   +-- negotiate.md          # Negotiation strategy
-|   +-- ...
++-- modes/                    # 16 skill modes
+|   +-- _shared.md            # Scoring system & global rules
+|   +-- evaluate.md           # 7-block A-G evaluation
+|   +-- auto-pipeline.md      # Paste URL -> full report
+|   +-- scan.md               # Property scanner (3-level)
+|   +-- builder.md            # Builder reputation deep-dive
+|   +-- negotiate.md          # Data-backed negotiation strategy
+|   +-- finance.md            # Affordability, bank comparison, buy-vs-rent, tax
+|   +-- trend.md              # Price trends + AI forecasting
+|   +-- compare.md            # Side-by-side property comparison
+|   +-- litigation.md         # Legal case search
+|   +-- due-diligence.md      # Pre-purchase checklist
+|   +-- alert.md              # Telegram alert configuration
+|   +-- tracker.md            # Pipeline management
+|   +-- batch.md              # Parallel evaluation
 +-- scripts/                  # Scraping & utility scripts
-+-- data/                     # Tracker, cache, history
-+-- reports/                  # Generated evaluation reports
+|   +-- igrs-scraper.mjs      # IGRS registration prices (CAPTCHA-aware)
+|   +-- maharera-scraper.mjs  # MahaRERA builder/project data
+|   +-- ecourts-search.mjs    # Litigation search (API + Playwright)
+|   +-- telegram-bot.mjs      # Telegram notifications
+|   +-- forecast-engine.mjs   # Price trend analysis
+|   +-- merge-tracker.mjs     # Tracker merge + dedup
+|   +-- verify-pipeline.mjs   # Data health check
++-- data/                     # Tracker, cache, history (gitignored)
++-- reports/                  # Generated evaluation reports (gitignored)
 +-- templates/                # Config templates
-+-- dashboard/                # Go TUI (coming soon)
-+-- batch/                    # Parallel processing
++-- dashboard/                # Go TUI (Bubble Tea, Catppuccin Mocha theme)
++-- batch/                    # Parallel processing (shell orchestrator)
++-- docs/                     # Setup, architecture, data sources
 ```
 
 ## Telegram Alerts
@@ -193,12 +209,14 @@ Run /propops evaluate for full report
 
 | Component | Technology |
 |-----------|-----------|
-| Agent | Claude Code with custom modes |
-| Scraping | Playwright (government portals) |
-| Litigation | eCourts API |
+| Agent | Claude Code with 16 custom modes |
+| Scraping | Playwright (IGRS, MahaRERA, property portals) |
+| Litigation | eCourts API (Kleopatra) + Playwright fallback |
+| Market Data | WebSearch + WebFetch for trends, rates, news |
 | Alerts | Telegram Bot API |
-| Data | Markdown + YAML + TSV |
-| Dashboard | Go + Bubble Tea (coming soon) |
+| Data | Markdown tables + YAML config + TSV batch |
+| Dashboard | Go + Bubble Tea (Catppuccin Mocha theme) |
+| Batch | Bash orchestrator + `claude -p` workers |
 
 ## Why Open Source
 

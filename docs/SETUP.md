@@ -40,6 +40,10 @@ PropOps auto-detects it's a first run and walks you through setup:
 /propops scan               # Search for properties
 /propops builder Godrej     # Check a builder's reputation
 /propops trend Hinjewadi    # Price trends for an area
+/propops finance            # Can I afford this property?
+/propops litigation Lodha   # Check legal cases against builder
+/propops compare            # Compare shortlisted properties
+/propops tracker            # View your property pipeline
 ```
 
 ## Detailed Setup

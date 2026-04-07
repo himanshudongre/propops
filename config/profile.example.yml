@@ -12,9 +12,24 @@ purchase:
   timeline: "6 months"  # when you plan to buy
   budget_min_lakhs: 60
   budget_max_lakhs: 90
+  family_size: 2
+
+# Financial details (used by /propops finance mode)
+finance:
+  monthly_income_net: 0         # Net monthly household income (after tax)
+  spouse_income_net: 0          # Spouse/co-borrower income (0 if none)
+  existing_emis: 0              # Total existing EMI payments per month (car, personal, etc.)
+  monthly_expenses: 0           # Non-EMI monthly expenses (rent, utilities, food)
+  liquid_savings_lakhs: 0       # Available for down payment + emergency buffer
+  employment_type: "salaried"   # salaried | self-employed | freelance
+  cibil_score_range: "good"     # excellent (750+) | good (700-749) | fair (650-699) | poor (<650)
+  tax_bracket_percent: 30       # 30 | 20 | 10 | 0
+  age: 30                       # For max loan tenure calculation
+  existing_home_loan: false     # Affects tax benefit eligibility
   loan_preapproval: false
   loan_amount_lakhs: 0
-  family_size: 2
+  preferred_tenure_years: 20
+  preferred_bank: ""            # Leave empty for best-rate recommendation
 
 preferences:
   city: "Pune"
@@ -43,6 +58,14 @@ builder_preferences:
   blacklisted_builders: []  # e.g., ["XYZ Developers"]
 
 scoring_overrides: {}
-  # Override default weights if desired:
-  # price_fairness: 25  # default: 20
-  # builder_trust: 20   # default: 15
+  # Override default weights (must sum to 100):
+  # price_fairness: 20       # Quoted vs actual registrations
+  # builder_trust: 15        # RERA compliance, delivery, litigation
+  # location_quality: 15     # Connectivity, infrastructure, safety
+  # legal_clarity: 15        # Title, encumbrance, litigation
+  # appreciation_potential: 10  # Area trends, infra projects
+  # configuration_match: 10  # Match with buyer brief
+  # livability: 5            # Schools, hospitals, daily needs
+  # rental_yield: 5          # Investment potential
+  # possession_risk: 3       # Builder delivery track record
+  # hidden_costs: 2          # Transparency of total cost
