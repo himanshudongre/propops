@@ -1,14 +1,6 @@
----
-name: propops
-description: AI-powered property transparency tool. Evaluate properties, scan portals, check builders, negotiate prices, get Telegram alerts.
-command: propops
----
+Read CLAUDE.md in the project root for full instructions. Then execute the PropOps command.
 
-# PropOps Skill
-
-When this skill is triggered, read `CLAUDE.md` in the project root for full instructions.
-
-## Quick Command Reference
+## Command Reference
 
 | Command | Action |
 |---------|--------|
@@ -31,8 +23,10 @@ When this skill is triggered, read `CLAUDE.md` in the project root for full inst
 
 ## Routing
 
-1. If the user pastes a URL (99acres, MagicBricks, Housing.com, or any property listing), read `modes/auto-pipeline.md` and execute.
-2. If the user specifies a subcommand, read the corresponding `modes/{command}.md` and execute.
-3. If no subcommand, show the command reference table above.
+1. If the user provides arguments that look like a URL, read `modes/auto-pipeline.md` and execute.
+2. If the argument is a subcommand (scan, evaluate, builder, etc.), read the corresponding `modes/{command}.md` and execute.
+3. If no argument, show the command reference table above.
 4. Always read `modes/_shared.md` first, then `modes/_profile.md` for overrides.
 5. Always read `buyer-brief.md` before any evaluation or scan.
+
+$ARGUMENTS
