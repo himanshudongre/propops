@@ -45,7 +45,7 @@ PropOps makes it searchable, scored, and actionable.
 
 ```bash
 # 1. Clone and install
-git clone https://github.com/YOUR_USERNAME/propops.git
+git clone https://github.com/himanshudongre/propops.git
 cd propops && npm install
 npx playwright install chromium
 
@@ -206,6 +206,12 @@ If PropOps saves you even 1% on your property purchase, that's lakhs of rupees. 
 
 MIT
 
+## Documentation
+
+- [SETUP.md](docs/SETUP.md) -- Installation and configuration guide
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) -- System design and data flow
+- [DATA-SOURCES.md](docs/DATA-SOURCES.md) -- Government portals and trust hierarchy
+
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. The most impactful contribution is adding scraper support for a new Indian state.
