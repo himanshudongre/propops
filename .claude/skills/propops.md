@@ -25,6 +25,8 @@ When this skill is triggered, read `CLAUDE.md` in the project root for full inst
 | `/propops alert` | Configure Telegram alerts |
 | `/propops tracker` | View property pipeline |
 | `/propops batch` | Batch evaluate properties |
+| `/propops finance` | Financial analysis (affordability, loans, buy-vs-rent) |
+| `/propops finance refinance` | Refinancing strategy for existing loan |
 
 ## Routing
 

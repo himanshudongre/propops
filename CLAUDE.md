@@ -136,6 +136,11 @@ If yes, guide through BotFather setup, create `telegram-config.yml`.
 | Wants to set up alerts | `alert` |
 | Asks about pipeline status | `tracker` |
 | Wants to batch evaluate | `batch` |
+| Asks about affordability, EMI, home loan | `finance` |
+| Wants to compare banks or loan rates | `finance` |
+| Asks "should I buy or rent?" | `finance` |
+| Asks about tax benefits of property | `finance` |
+| Wants prepayment or refinancing strategy | `finance` |
 
 ### Buyer Brief Source of Truth
 

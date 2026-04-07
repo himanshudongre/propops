@@ -37,6 +37,7 @@ PropOps makes it searchable, scored, and actionable.
 | **Price Forecasting** | AI-powered price trends and 12-month forecasts using historical registration data + infrastructure projects. |
 | **Telegram Alerts** | Get notified on Telegram when matching properties hit the market. |
 | **Batch Processing** | Evaluate 10+ properties in parallel with sub-agents. |
+| **Financial Analysis** | Affordability stress test, bank comparison (saves Rs 5-15L), buy vs rent, tax optimization, prepayment strategy, refinancing. |
 | **Pipeline Tracker** | Track every property from discovery through purchase. |
 
 > **This is NOT a spam tool.** PropOps helps you make informed decisions. It never contacts builders or submits applications. You always have the final call.
@@ -82,6 +83,9 @@ claude
 /propops alert              Configure Telegram alerts
 /propops tracker            View property pipeline
 /propops batch              Batch evaluate multiple properties
+/propops finance            Financial analysis (affordability, EMI, bank comparison)
+/propops finance buy-vs-rent  Should you buy or rent this property?
+/propops finance refinance   Refinancing strategy for existing loan
 ```
 
 Or just paste a property URL or listing -- PropOps auto-detects it and runs the full pipeline.
