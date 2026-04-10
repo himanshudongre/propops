@@ -43,27 +43,56 @@ const RERA_NATIONAL = {
   base: 'https://www.rera.mohua.gov.in',
   home: 'https://www.rera.mohua.gov.in/',
 
-  // Discovered endpoints (research 2026-04-10)
+  // Confirmed static pages (via Google index)
   key_features: 'https://rera.mohua.gov.in/key-features-of-RERA.html',
   rera_act: 'https://rera.mohua.gov.in/real-estate-regulation-and-development-act-2016.html',
   tracker: 'https://rera.mohua.gov.in/tracker.html',
+  state_uts_list: 'https://rera.mohua.gov.in/real-estate-regulatory-authorities-of-states-uts.html', // Official list of all 35 state portals
+  central_advisory_council: 'https://rera.mohua.gov.in/central-advisory-council.html',
+
+  // MoHUA CMS pages
+  mohua_rera_page: 'https://mohua.gov.in/cms/rera.php',
   implementation_status: 'https://mohua.gov.in/cms/implementation-status.php',
-  state_rera_list: 'https://mohua.gov.in/cms/rera.php',
-
-  // Weekly tracker PDF (updated regularly)
   tracker_pdf: 'https://mohua.gov.in/upload/uploadfiles/files/RERA-Status-Tracker-08-04-2024.pdf',
+  faqs_pdf: 'https://mohua.gov.in/upload/uploadfiles/files/FAQs-on-RERA(1).pdf',
+  pib_launch: 'https://www.pib.gov.in/PressReleasePage.aspx?PRID=2163844',
 
-  // IMPORTANT FINDING: The portal is mostly static HTML pages.
-  // It doesn't have a true search JSON API. It aggregates stats and
-  // REDIRECTS users to individual state RERA portals for project-level searches.
-  //
-  // This means for actual project searches, you still need state-specific scrapers.
-  // The MoHUA portal is best used for:
-  // - National-level statistics (total projects, agents, states)
-  // - Weekly tracker updates
-  // - Implementation status by state
-  // - Finding links to each state's RERA portal
+  // Potential OGD India (data.gov.in) dataset — NEEDS VERIFICATION
+  // If this is a live RERA dataset, it's the highest-value endpoint.
+  // data.gov.in typically requires API key registration (free).
+  ogd_dataset: 'https://www.data.gov.in/apis/81242853-a9f9-44f4-a100-ea817d9c9ebe',
+
+  // Main portal tabs (confirmed from news coverage, but exact URLs need live inspection)
+  // The portal has 4 main tabs: Projects, Developers, Complaints, Orders
+  // Each has a state dropdown + free-text search
+  tabs: {
+    projects: 'https://www.rera.mohua.gov.in/projects',     // hypothesized
+    developers: 'https://www.rera.mohua.gov.in/developers', // hypothesized
+    complaints: 'https://www.rera.mohua.gov.in/complaints', // hypothesized
+    orders: 'https://www.rera.mohua.gov.in/orders'          // hypothesized
+  },
+
+  // KEY ARCHITECTURAL FINDING:
+  // The unified portal aggregates stats natively BUT likely deep-links
+  // back to individual state portals for full project details. This means:
+  // - For national-level stats and discovery: use this scraper
+  // - For full project details: use state-specific scrapers
+  // - Zero prior scrapers exist for rera.mohua.gov.in (greenfield)
 };
+
+// 35 States/UTs with RERA (as of launch September 2025)
+// Holdouts: Ladakh, Meghalaya, Nagaland, Sikkim
+const RERA_STATES = [
+  'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
+  'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand',
+  'Karnataka', 'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur',
+  'Mizoram', 'Odisha', 'Punjab', 'Rajasthan', 'Tamil Nadu',
+  'Telangana', 'Tripura', 'Uttarakhand', 'Uttar Pradesh', 'West Bengal',
+  // UTs
+  'Andaman and Nicobar', 'Chandigarh', 'Dadra and Nagar Haveli',
+  'Daman and Diu', 'Delhi', 'Jammu and Kashmir', 'Lakshadweep',
+  'Puducherry'
+];
 
 // ─── Cache ──────────────────────────────────────────────────
 
@@ -438,31 +467,56 @@ async function getStatePortalLinks() {
   const page = await browser.newPage();
 
   try {
-    console.error(`Fetching state RERA portal links...`);
-    await page.goto(RERA_NATIONAL.state_rera_list, { waitUntil: 'networkidle', timeout: 30000 });
-    await page.waitForTimeout(2000);
+    console.error(`Fetching state RERA portal links from official MoHUA list...`);
+    await page.goto(RERA_NATIONAL.state_uts_list, { waitUntil: 'networkidle', timeout: 30000 });
+    await page.waitForTimeout(3000);
 
     const links = await page.evaluate(() => {
+      // Prefer table rows where state name and link are adjacent
+      const tableLinks = [];
+      const tables = document.querySelectorAll('table');
+      for (const table of tables) {
+        const rows = table.querySelectorAll('tr');
+        for (const row of rows) {
+          const cells = Array.from(row.querySelectorAll('td'));
+          if (cells.length >= 2) {
+            // Find the state name cell and the link cell
+            const stateName = cells[0]?.textContent?.trim() || '';
+            const link = row.querySelector('a[href]');
+            if (stateName && link && stateName.length < 50) {
+              tableLinks.push({
+                state: stateName,
+                portal_url: link.href,
+                portal_text: link.textContent?.trim() || ''
+              });
+            }
+          }
+        }
+      }
+
+      if (tableLinks.length > 0) return tableLinks;
+
+      // Fallback: extract all external RERA links
       const allLinks = Array.from(document.querySelectorAll('a'));
       return allLinks
         .map(a => ({
-          text: a.textContent?.trim() || '',
-          href: a.href
+          state: a.textContent?.trim() || '',
+          portal_url: a.href,
+          portal_text: a.textContent?.trim() || ''
         }))
         .filter(l =>
-          l.href &&
-          (l.href.includes('rera') || /\b(state|ut|portal)\b/i.test(l.text)) &&
-          !l.href.startsWith('mailto:') &&
-          !l.href.startsWith('tel:')
-        )
-        .slice(0, 100);
+          l.portal_url &&
+          (l.portal_url.includes('rera') || /rera/i.test(l.state)) &&
+          !l.portal_url.includes('mohua.gov.in') &&
+          !l.portal_url.startsWith('mailto:')
+        );
     });
 
     const output = {
-      source: 'MoHUA Implementation Status',
-      source_url: RERA_NATIONAL.state_rera_list,
+      source: 'MoHUA State/UT RERA Authorities List',
+      source_url: RERA_NATIONAL.state_uts_list,
       scraped_at: new Date().toISOString(),
-      count: links.length,
+      total_states: links.length,
       state_portal_links: links
     };
 
@@ -471,12 +525,83 @@ async function getStatePortalLinks() {
 
   } catch (error) {
     return {
-      source: 'MoHUA Implementation Status',
+      source: 'MoHUA State/UT RERA Authorities List',
       error: error.message
     };
   } finally {
     await browser.close();
   }
+}
+
+// ─── Try data.gov.in OGD Dataset ───────────────────────────
+
+async function checkOGDDataset() {
+  console.error(`Checking data.gov.in OGD dataset for RERA...`);
+
+  const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
+  const page = await browser.newPage();
+
+  try {
+    await page.goto(RERA_NATIONAL.ogd_dataset, { waitUntil: 'networkidle', timeout: 30000 });
+    await page.waitForTimeout(3000);
+
+    const datasetInfo = await page.evaluate(() => {
+      const title = document.querySelector('h1, h2, .title, .api-title')?.textContent?.trim() || '';
+      const description = document.querySelector('.description, .api-description, p')?.textContent?.trim() || '';
+
+      // Look for common OGD metadata fields
+      const metadata = {};
+      document.querySelectorAll('dt, .meta-label').forEach(el => {
+        const label = el.textContent?.trim().replace(/:/g, '') || '';
+        const value = el.nextElementSibling?.textContent?.trim() || '';
+        if (label && value) metadata[label.toLowerCase()] = value;
+      });
+
+      // Check for RERA/real estate mentions
+      const text = (document.body.textContent || '').toLowerCase();
+      const rera_related = /\brera\b|real\s*estate|property\s*registration|housing\s*regulation/i.test(text);
+
+      return {
+        title,
+        description: description.slice(0, 500),
+        metadata,
+        rera_related,
+        page_title: document.title
+      };
+    });
+
+    return {
+      source: 'OGD India (data.gov.in)',
+      source_url: RERA_NATIONAL.ogd_dataset,
+      scraped_at: new Date().toISOString(),
+      ...datasetInfo,
+      note: datasetInfo.rera_related
+        ? 'This dataset appears to be RERA-related. Register for a free data.gov.in API key to access the data.'
+        : 'Could not confirm this dataset is RERA-related. Manual inspection required.'
+    };
+
+  } catch (error) {
+    return {
+      source: 'OGD India (data.gov.in)',
+      source_url: RERA_NATIONAL.ogd_dataset,
+      error: error.message,
+      note: 'Could not fetch. data.gov.in may require registration or the endpoint may have moved.'
+    };
+  } finally {
+    await browser.close();
+  }
+}
+
+// ─── List All RERA States ──────────────────────────────────
+
+function listReraStates() {
+  return {
+    source: 'MoHUA Unified RERA Portal',
+    total: RERA_STATES.length,
+    states: RERA_STATES,
+    holdouts: ['Ladakh', 'Meghalaya', 'Nagaland', 'Sikkim'],
+    note: 'These 35 states/UTs have established RERA authorities. 4 holdouts remain (as of Sept 2025 unified portal launch).'
+  };
 }
 
 // ─── Get National Stats ────────────────────────────────────
@@ -558,7 +683,15 @@ Usage:
     Get weekly MoHUA RERA tracker data (state-wise projects, agents, complaints)
 
   node scripts/scrapers/rera-national.mjs state-links
-    Get links to all individual state RERA portals from MoHUA implementation page
+    Get official list of all 35 state RERA portal URLs from MoHUA.
+    This is the authoritative source — use this before falling back to state-specific scrapers.
+
+  node scripts/scrapers/rera-national.mjs ogd
+    Check the data.gov.in OGD dataset entry for potential official RERA API.
+    If this is a live dataset, it's the highest-value endpoint (bypasses scraping).
+
+  node scripts/scrapers/rera-national.mjs states
+    List all 35 RERA-established states/UTs (plus the 4 holdouts).
 
 Options:
   --project      Project name to search
@@ -602,6 +735,14 @@ state-specific RERA scrapers with one national portal.
 
     case 'state-links':
       result = await getStatePortalLinks();
+      break;
+
+    case 'ogd':
+      result = await checkOGDDataset();
+      break;
+
+    case 'states':
+      result = listReraStates();
       break;
 
     default:
