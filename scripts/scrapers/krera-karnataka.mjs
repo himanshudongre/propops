@@ -25,6 +25,7 @@ import { chromium } from 'playwright';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { saveDebugSnapshot, logPageStructure } from './debug-helper.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..', '..');
@@ -65,8 +66,8 @@ function writeCache(type, key, data) {
 // ─── List All Projects ──────────────────────────────────────
 
 async function listProjects(options = {}) {
-  const { district, maxPages = 5 } = options;
-  const cacheKey = `list-${district || 'all'}`;
+  const { district, maxPages = 5, projectName, firmName, regNo } = options;
+  const cacheKey = `list-${district || 'all'}-${projectName || firmName || regNo || ''}`;
   const cached = readCache('list', cacheKey);
   if (cached) return cached;
 
@@ -74,29 +75,68 @@ async function listProjects(options = {}) {
   const page = await browser.newPage();
 
   try {
-    console.error(`Fetching K-RERA projects${district ? ` in ${district}` : ''}...`);
-    await page.goto(KRERA.project_listing, { waitUntil: 'networkidle', timeout: 30000 });
+    console.error(`Fetching K-RERA projects${district ? ` in ${district}` : ''}${projectName ? ` matching "${projectName}"` : ''}...`);
+    // Use domcontentloaded instead of networkidle — K-RERA is a large SPA
+    // that keeps fetching for a long time. The data is embedded in the
+    // initial HTML, so we don't need to wait for all network activity.
+    await page.goto(KRERA.project_listing, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(3000);
 
-    // Apply district filter if specified
+    // K-RERA viewAllProjects page is actually a SEARCH FORM, not a listing.
+    // You must submit the form (POST to /projectViewDetails) to get results.
+    // Form fields (verified via debug snapshot 2026-04-10):
+    //   #projectDist     - district select (32 options)
+    //   #projectName     - project name text input (name="project")
+    //   #firmName        - firm/promoter text input (name="firm")
+    //   #regNo           - application number text input (name="appNo")
+    //   #regNo2          - registration number text input (name="regNo")
+    //   submit button    - name="btn1"
+
+    // Fill district if specified
     if (district) {
-      const districtSelect = await page.$('select[name*="district"], #district');
+      const districtSelect = await page.$('#projectDist, select[name="district"]');
       if (districtSelect) {
         try {
           await districtSelect.selectOption({ label: new RegExp(district, 'i') });
           await page.waitForTimeout(1500);
-
-          // Trigger filter
-          const filterBtn = await page.$('button[type="submit"], input[type="submit"], .btn-primary');
-          if (filterBtn) {
-            await filterBtn.click();
-            await page.waitForLoadState('networkidle');
-            await page.waitForTimeout(2000);
-          }
         } catch {
           console.error(`District filter "${district}" not applied`);
         }
       }
+    }
+
+    // Fill project name if specified
+    if (projectName) {
+      const projectInput = await page.$('#projectName, input[name="project"]');
+      if (projectInput) await projectInput.fill(projectName);
+    }
+
+    // Fill firm name if specified
+    if (firmName) {
+      const firmInput = await page.$('#firmName, input[name="firm"]');
+      if (firmInput) await firmInput.fill(firmName);
+    }
+
+    // Fill registration number if specified
+    if (regNo) {
+      const regInput = await page.$('#regNo2, input[name="regNo"]');
+      if (regInput) await regInput.fill(regNo);
+    }
+
+    // Submit the form — K-RERA requires this to get any results
+    const submitBtn = await page.$('input[type="submit"][name="btn1"], input[type="submit"], button[type="submit"]');
+    if (submitBtn) {
+      await submitBtn.click();
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(3000);
+    } else {
+      console.error(`[K-RERA] Submit button not found. Using form submit() fallback.`);
+      await page.evaluate(() => {
+        const form = document.querySelector('form[name="registrationForm"], form');
+        if (form) form.submit();
+      });
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(3000);
     }
 
     // Collect projects across pages
@@ -104,47 +144,100 @@ async function listProjects(options = {}) {
 
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
       const projects = await page.evaluate(() => {
-        const tables = document.querySelectorAll('table');
-        let data = [];
+        // K-RERA CRITICAL FINDING (verified 2026-04-10):
+        // Projects are NOT in HTML tables. They are embedded as JavaScript
+        // array push() calls in inline <script> tags. Pattern:
+        //   applicationNameList1.push('...');      // seems to be some ID
+        //   applicationNameList2.push('PRM/KA/RERA/...');  // RERA registration number
+        //   applicationNameList3.push('Project Name');       // project name
+        //   applicationNameList4.push('Promoter Name');      // promoter
+        //
+        // We parse these out of the raw HTML using regex.
 
-        for (const table of tables) {
-          const rows = table.querySelectorAll('tr');
-          if (rows.length < 2) continue;
+        const html = document.documentElement.outerHTML;
 
-          const headers = Array.from(rows[0].querySelectorAll('th, td'))
-            .map(c => c.textContent?.trim().toLowerCase() || '');
+        // Extract all .push('...') calls per array index
+        const extractArray = (arrayName) => {
+          const pattern = new RegExp(`${arrayName}\\s*\\.push\\s*\\(\\s*['"]([^'"]*)['"]\\s*\\)`, 'g');
+          const matches = [];
+          let m;
+          while ((m = pattern.exec(html)) !== null) {
+            matches.push(m[1]);
+          }
+          return matches;
+        };
 
-          // Check if this is a project table
-          const isProjectTable = headers.some(h =>
-            h.includes('project') || h.includes('promoter') || h.includes('registration')
-          );
+        const list1 = extractArray('applicationNameList1');
+        const list2 = extractArray('applicationNameList2');
+        const list3 = extractArray('applicationNameList3');
+        const list4 = extractArray('applicationNameList4');
 
-          if (!isProjectTable) continue;
+        // Combine by index
+        const maxLen = Math.max(list1.length, list2.length, list3.length, list4.length);
+        const data = [];
 
-          for (let i = 1; i < rows.length; i++) {
-            const cells = Array.from(rows[i].querySelectorAll('td'));
-            if (cells.length < 3) continue;
+        for (let i = 0; i < maxLen; i++) {
+          const entry = {
+            _field_1: list1[i] || '',
+            rera_number: list2[i] || '',
+            project_name: list3[i] || '',
+            promoter_name: list4[i] || ''
+          };
 
-            const entry = {};
-            cells.forEach((cell, idx) => {
-              const header = headers[idx] || `col_${idx}`;
-              const key = header.replace(/[^a-z0-9_]/g, '_').replace(/_+/g, '_');
-              entry[key] = cell.textContent?.trim() || '';
-
-              const link = cell.querySelector('a');
-              if (link?.href) entry[`${key}_url`] = link.href;
-            });
-
+          // Only include entries that have at least a project name or RERA number
+          if (entry.project_name || entry.rera_number) {
             data.push(entry);
           }
+        }
 
-          if (data.length > 0) break;
+        // Fallback: if JS array extraction failed, try traditional table parsing
+        if (data.length === 0) {
+          const tables = document.querySelectorAll('table');
+          const projectKeywords = ['project', 'promoter', 'registration', 'rera', 'developer', 'builder'];
+
+          for (const table of tables) {
+            const rows = table.querySelectorAll('tr');
+            if (rows.length < 2) continue;
+
+            const headers = Array.from(rows[0].querySelectorAll('th, td'))
+              .map(c => c.textContent?.trim().toLowerCase() || '');
+
+            const isProjectTable = headers.some(h =>
+              projectKeywords.some(kw => h.includes(kw))
+            );
+
+            if (!isProjectTable) continue;
+
+            for (let i = 1; i < rows.length; i++) {
+              const cells = Array.from(rows[i].querySelectorAll('td'));
+              if (cells.length < 3) continue;
+
+              const entry = { _source: 'table' };
+              cells.forEach((cell, idx) => {
+                const header = headers[idx] || `col_${idx}`;
+                const key = header.replace(/[^a-z0-9_]/g, '_').replace(/_+/g, '_');
+                entry[key] = cell.textContent?.trim() || '';
+              });
+
+              data.push(entry);
+            }
+
+            if (data.length > 0) break;
+          }
         }
 
         return data;
       });
 
-      if (projects.length === 0) break;
+      if (projects.length === 0) {
+        // Debug: save snapshot so we can see why
+        if (pageNum === 1) {
+          const structure = await logPageStructure(page);
+          console.error(`[K-RERA] Zero projects on page ${pageNum}. Structure:`, JSON.stringify(structure, null, 2));
+          await saveDebugSnapshot(page, 'krera-zero-results');
+        }
+        break;
+      }
       allProjects.push(...projects);
 
       // Try to navigate to next page
@@ -164,12 +257,12 @@ async function listProjects(options = {}) {
       }
     }
 
-    // Normalize
+    // Normalize (JS-array extraction gives us rera_number, project_name, promoter_name directly)
     const normalized = allProjects.map(p => ({
       project_name: p.project_name || p.name_of_the_project || p.name || '',
       promoter_name: p.promoter_name || p.name_of_the_promoter || p.promoter || '',
-      rera_number: p.registration_number || p.rera_no || p.application_number || '',
-      district: p.district || '',
+      rera_number: p.rera_number || p.registration_number || p.rera_no || p.application_number || '',
+      district: district || p.district || '',
       taluk: p.taluk || '',
       status: p.status || p.project_status || '',
       registration_date: p.registration_date || p.date || '',
@@ -210,24 +303,26 @@ async function searchProjects(name) {
   const cached = readCache('project-search', name);
   if (cached) return cached;
 
-  // For K-RERA, search by listing all and filtering
-  const listing = await listProjects({ maxPages: 10 });
+  // K-RERA always returns ALL projects in JS arrays — filter client-side
+  const listing = await listProjects({ projectName: name, maxPages: 10 });
 
+  const nameLower = name.toLowerCase();
   const matches = (listing.results || []).filter(p => {
     const projLower = (p.project_name || '').toLowerCase();
-    const nameLower = name.toLowerCase();
-    return projLower.includes(nameLower);
+    const promoterLower = (p.promoter_name || '').toLowerCase();
+    return projLower.includes(nameLower) || promoterLower.includes(nameLower);
   });
 
   const output = {
     query: name,
     source: 'K-RERA',
     scraped_at: new Date().toISOString(),
+    total_projects_on_portal: (listing.results || []).length,
     results_count: matches.length,
     results: matches
   };
 
-  if (matches.length > 0) {
+  if (output.results_count > 0) {
     writeCache('project-search', name, output);
   }
 
@@ -240,11 +335,13 @@ async function getBuilderProjects(builderName) {
   const cached = readCache('builder', builderName);
   if (cached) return cached;
 
-  const listing = await listProjects({ maxPages: 10 });
+  // K-RERA returns all projects; filter client-side by promoter name
+  const listing = await listProjects({ firmName: builderName, maxPages: 10 });
 
+  const nameLower = builderName.toLowerCase();
   const builderProjects = (listing.results || []).filter(p => {
     const promoter = (p.promoter_name || '').toLowerCase();
-    return promoter.includes(builderName.toLowerCase());
+    return promoter.includes(nameLower);
   });
 
   const output = {

@@ -28,6 +28,7 @@ import { chromium } from 'playwright';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { saveDebugSnapshot, logPageStructure } from './debug-helper.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..', '..');
@@ -159,6 +160,11 @@ async function listProjects(options = {}) {
         const tables = document.querySelectorAll('table');
         let data = [];
 
+        const projectKeywords = [
+          'project', 'promoter', 'registration', 'rera',
+          'developer', 'builder', 'certificate', 'ack', 'name'
+        ];
+
         for (const table of tables) {
           const rows = table.querySelectorAll('tr');
           if (rows.length < 2) continue;
@@ -167,7 +173,7 @@ async function listProjects(options = {}) {
             .map(c => c.textContent?.trim().toLowerCase() || '');
 
           const isProjectTable = headers.some(h =>
-            h.includes('project') || h.includes('promoter') || h.includes('registration') || h.includes('rera')
+            projectKeywords.some(kw => h.includes(kw))
           );
 
           if (!isProjectTable) continue;
@@ -192,10 +198,50 @@ async function listProjects(options = {}) {
           if (data.length > 0) break;
         }
 
+        // Fallback: any table with 3+ columns and 3+ data rows
+        if (data.length === 0) {
+          for (const table of tables) {
+            const rows = table.querySelectorAll('tr');
+            if (rows.length < 4) continue;
+
+            const firstRowCells = rows[0].querySelectorAll('th, td').length;
+            if (firstRowCells < 3) continue;
+
+            const headers = Array.from(rows[0].querySelectorAll('th, td'))
+              .map(c => c.textContent?.trim().toLowerCase() || '');
+
+            for (let i = 1; i < rows.length; i++) {
+              const cells = Array.from(rows[i].querySelectorAll('td'));
+              if (cells.length < 3) continue;
+
+              const entry = { _fallback_match: true };
+              cells.forEach((cell, idx) => {
+                const header = headers[idx] || `col_${idx}`;
+                const key = header.replace(/[^a-z0-9_]/g, '_').replace(/_+/g, '_') || `col_${idx}`;
+                entry[key] = cell.textContent?.trim() || '';
+
+                const link = cell.querySelector('a');
+                if (link?.href) entry[`${key}_url`] = link.href;
+              });
+
+              data.push(entry);
+            }
+
+            if (data.length > 0) break;
+          }
+        }
+
         return data;
       });
 
-      if (projects.length === 0) break;
+      if (projects.length === 0) {
+        if (pageNum === 1) {
+          const structure = await logPageStructure(page);
+          console.error(`[TG-RERA] Zero projects on page ${pageNum}. Structure:`, JSON.stringify(structure, null, 2));
+          await saveDebugSnapshot(page, 'tsrera-zero-results');
+        }
+        break;
+      }
       allProjects.push(...projects);
 
       // Try next page (ASP.NET pagination)

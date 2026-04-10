@@ -152,16 +152,60 @@ async function listProjectsByYear(year, type = 'Building') {
     });
 
     // Normalize common field names
-    const normalized = projects.map(p => ({
-      sr_no: p.sr_no || p.sno || p.s_no || p.col_0 || '',
-      project_name: p.project_name || p.name_of_the_project || p.project || p.col_1 || '',
-      promoter_name: p.name_of_the_promoter || p.promoter_name || p.promoter || p.col_2 || '',
-      registration_no: p.registration_no || p.registration_number || p.rera_no || p.col_3 || '',
-      district: p.district || p.col_4 || '',
-      status: p.status || p.project_status || '',
-      detail_url: p.project_name_url || p.sr_no_url || '',
-      _raw: p
-    }));
+    // TNRERA actual column headers (verified 2026-04-10):
+    // - s_no_
+    // - project_registration_no_   (e.g., "TN/16/Building/0001/2024 dated 03/01/2024")
+    // - name_and_address_of_the_promoter
+    // - project_details_and_address (contains "Project Name: X - ...")
+    // - approval_details
+    // - project_completion_date
+    // - other_details
+    const normalized = projects.map(p => {
+      const rawRegNo = p.project_registration_no_ || p.registration_no || p.registration_number || p.rera_no || p.col_3 || '';
+      const rawPromoter = p.name_and_address_of_the_promoter || p.name_of_the_promoter || p.promoter_name || p.promoter || p.col_2 || '';
+      const rawProjectDetails = p.project_details_and_address || p.project_name || p.name_of_the_project || p.project || p.col_1 || '';
+
+      // Extract clean registration number (strip "dated XX/XX/XXXX" suffix)
+      const regNoClean = rawRegNo.split(/\s+dated\s+/i)[0].trim();
+
+      // Extract promoter name — prefer M/s entity name if present, else individual name
+      // Raw format examples:
+      //   "Thiru. M.Anand, Managing Partner, M/s. Rohini Colours, No.7, ..."
+      //   "M/s. Godrej Properties Limited, ABC Building, ..."
+      //   "Shri Rajesh Kumar, Proprietor, XYZ Constructions, ..."
+      let promoterClean = '';
+      const msMatch = rawPromoter.match(/M\/s\.?\s*([^,]+)/i);
+      if (msMatch) {
+        // Prefer the M/s. Entity Name as the promoter
+        promoterClean = msMatch[1].trim();
+      } else {
+        // Fall back to the first name segment (before comma)
+        promoterClean = rawPromoter
+          .replace(/^(thiru|thirumathi|shri|smt|mr|mrs|ms)\.\s*/i, '')
+          .split(',')[0]
+          .trim();
+      }
+
+      // Extract project name from "Project Name: X -" prefix
+      const projectNameMatch = rawProjectDetails.match(/project\s*name\s*[:\-"]\s*["']?([^"'\n\-]+)/i);
+      const projectNameClean = projectNameMatch ? projectNameMatch[1].replace(/["']/g, '').trim() : '';
+
+      // Extract district/location from project details (last location mentioned)
+      const districtMatch = rawProjectDetails.match(/([\w\s]+?)\s+district/i);
+      const districtClean = districtMatch ? districtMatch[1].trim() : (p.district || '');
+
+      return {
+        sr_no: p.s_no_ || p.sr_no || p.sno || p.col_0 || '',
+        project_name: projectNameClean || rawProjectDetails.slice(0, 80).trim(),
+        promoter_name: promoterClean || rawPromoter.slice(0, 80).trim(),
+        registration_no: regNoClean,
+        district: districtClean,
+        status: p.status || p.project_status || '',
+        completion_date: p.project_completion_date || '',
+        detail_url: p.project_name_url || p.sr_no_url || '',
+        _raw: p  // Keep raw data for downstream consumers
+      };
+    });
 
     const output = {
       year,
