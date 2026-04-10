@@ -228,13 +228,31 @@ function scoreBuilderSimilarity(a, b) {
     }
   }
 
+  // Verdict logic:
+  // - Exact normalized name match alone = very_likely_same (even without other signals)
+  // - Brand core match = likely_same
+  // - Accumulated score >= 0.7 = very_likely_same
+  // - Score >= 0.5 = likely_same
+  // - Score >= 0.3 = possibly_related
+  let verdict;
+  if (signals.name_exact) {
+    verdict = 'very_likely_same';
+  } else if (signals.name_brand_match) {
+    verdict = 'likely_same';
+  } else if (score >= 0.7) {
+    verdict = 'very_likely_same';
+  } else if (score >= 0.5) {
+    verdict = 'likely_same';
+  } else if (score >= 0.3) {
+    verdict = 'possibly_related';
+  } else {
+    verdict = 'unrelated';
+  }
+
   return {
     score: Math.min(1, score),
     signals,
-    verdict: score >= 0.7 ? 'very_likely_same' :
-             score >= 0.5 ? 'likely_same' :
-             score >= 0.3 ? 'possibly_related' :
-             'unrelated'
+    verdict
   };
 }
 
