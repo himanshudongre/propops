@@ -244,13 +244,15 @@ Run /propops evaluate for full report
 | State | IGRS (Actual Prices) | RERA | eCourts | Status |
 |-------|---------------------|------|---------|--------|
 | **Maharashtra** (Mumbai, Pune, Thane) | Full | Full | Full | ✅ Production |
-| **Karnataka** (Bangalore) | Planned | Planned | Via API | 🚧 In development |
+| **Karnataka** (Bangalore) | Planned | ✅ Full | Via API | ✅ RERA live |
+| **Tamil Nadu** (Chennai) | Planned | ✅ Full | Via API | ✅ RERA live |
 | **Telangana** (Hyderabad) | Planned | Planned | Via API | 🚧 In development |
 | **Delhi NCR** (Delhi, Gurgaon, Noida) | Planned | Planned | Via API | 🚧 In development |
-| **Tamil Nadu** (Chennai) | Planned | Planned | Via API | 📋 Roadmap |
-| **Uttar Pradesh** | Planned | Planned | Via API | 📋 Roadmap |
+| **Uttar Pradesh** (Noida/Greater Noida) | Planned | Planned | Via API | 📋 Roadmap |
 
-**eCourts litigation search works nationally** via the Kleopatra API wrapper — all states covered for legal case lookups. IGRS and RERA are state-specific and need per-state scrapers.
+**Plus: Unified National RERA Portal** (`rera.mohua.gov.in`) — launched Sept 2025 by MoHUA, covers 35 states/UTs with 151,113+ projects. PropOps has a scraper for this as well (`rera-national.mjs`).
+
+**eCourts litigation search works nationally** via the Kleopatra API wrapper — all states covered for legal case lookups. IGRS portals are state-specific.
 
 The state registry (`scripts/scrapers/state-registry.mjs`) defines all configurations. Adding a new state is as simple as writing one scraper file matching the base interface.
 
