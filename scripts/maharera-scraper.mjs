@@ -26,6 +26,7 @@ import { chromium } from 'playwright';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { saveDebugSnapshot, logPageStructure } from './scrapers/debug-helper.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -33,12 +34,25 @@ const CACHE_DIR = resolve(ROOT, 'data/builder-cache');
 const CACHE_VALIDITY_DAYS = 30;
 
 // Portal A (Drupal — primary, simpler)
+// Verified 2026-04-10 by probing the live homepage navigation
 const PORTAL_A = {
   base: 'https://maharera.maharashtra.gov.in',
+
+  // Working URLs (verified)
   projectSearch: 'https://maharera.maharashtra.gov.in/projects-search-result',
-  promoterSearch: 'https://maharera.maharashtra.gov.in/promoters-search-result',
   mapSearch: 'https://maharera.maharashtra.gov.in/map-projects-search-result',
-  statistics: 'https://maharera.maharashtra.gov.in/statistics'
+  projectComplaints: 'https://maharera.maharashtra.gov.in/project-complaint-report',
+  promoterComplaints: 'https://maharera.maharashtra.gov.in/promoter-complaint-report',
+  lapsedProjects: 'https://maharera.maharashtra.gov.in/lapsed-project-underconstruction',
+  ncltProjects: 'https://maharera.maharashtra.gov.in/nclt-projects',
+  orders: 'https://maharera.maharashtra.gov.in/orders-judgements',
+  deregistrationNotices: 'https://maharera.maharashtra.gov.in/project-de-registration-notices',
+
+  // NOTE: The old /promoters-search-result URL redirects to the site-wide
+  // search (search/node) which is useless. MahaRERA no longer has a
+  // dedicated promoter search page. Use promoterComplaints + projectSearch
+  // (filtered by promoter name) as alternatives.
+  promoterSearch: 'https://maharera.maharashtra.gov.in/promoter-complaint-report'
 };
 
 // Portal B (ASP.NET — fallback, more detailed)
@@ -99,134 +113,210 @@ async function searchProjectsPortalA(query, options = {}) {
       console.error(`[Portal A] Searching projects: "${query}"`);
     }
 
-    await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+    // Use domcontentloaded instead of networkidle — Drupal portal is slow
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.waitForTimeout(3000);
 
     // If not direct lookup, fill the search form
     if (!query.startsWith('P') || !/^P\d+/.test(query)) {
-      // Try various input selectors (Drupal Views forms vary)
-      const selectors = [
-        'input[name*="project_name"]',
-        'input[name*="field_project_name"]',
-        '#edit-field-project-name-value',
-        'input[type="text"]'
-      ];
+      // IMPORTANT: The MahaRERA page has 3 forms. We need the specific project
+      // search form with id="projects-search-page-form" which contains
+      // #edit-project-name. Do NOT use the site-wide search-block-form.
+      // Verified 2026-04-10 via form inspection.
 
-      for (const sel of selectors) {
-        const input = await page.$(sel);
-        if (input) {
-          await input.fill(query);
-          break;
+      const filled = await page.evaluate((searchQuery) => {
+        // Target the exact form by id
+        const form = document.getElementById('projects-search-page-form');
+        if (!form) {
+          // Fallback: any form containing #edit-project-name
+          const input = document.getElementById('edit-project-name');
+          if (!input) return { success: false, error: 'project_name field not found' };
+
+          input.focus();
+          input.value = searchQuery;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          return { success: true, form: 'fallback' };
         }
+
+        const nameInput = form.querySelector('#edit-project-name, input[name="project_name"]');
+        if (!nameInput) return { success: false, error: 'project_name input not in form' };
+
+        nameInput.focus();
+        nameInput.value = searchQuery;
+        nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+        nameInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+        return { success: true, form: form.id };
+      }, query);
+
+      if (!filled.success) {
+        console.error(`[Portal A] Form fill failed: ${filled.error}`);
+      } else {
+        console.error(`[Portal A] Filled form: ${filled.form}`);
       }
 
       // Set district filter if provided
       if (options.district) {
-        const districtSelectors = [
-          'select[name*="district"]',
-          '#edit-field-district-target-id',
-          'select[name*="field_district"]'
-        ];
-        for (const sel of districtSelectors) {
-          const select = await page.$(sel);
-          if (select) {
-            try {
-              await select.selectOption({ label: new RegExp(options.district, 'i') });
-            } catch {
-              // Try by value if label fails
-              const optionTexts = await page.$$eval(`${sel} option`, opts =>
-                opts.map(o => ({ value: o.value, text: o.textContent.trim() }))
-              );
-              const match = optionTexts.find(o =>
-                o.text.toLowerCase().includes(options.district.toLowerCase())
-              );
-              if (match) await select.selectOption(match.value);
+        await page.evaluate((dist) => {
+          const form = document.getElementById('projects-search-page-form');
+          if (!form) return;
+          const selects = Array.from(form.querySelectorAll('select'))
+            .filter(s => /district/i.test(s.name) || /district/i.test(s.id));
+          for (const sel of selects) {
+            const match = Array.from(sel.options).find(o =>
+              o.text.toLowerCase().includes(dist.toLowerCase())
+            );
+            if (match) {
+              sel.value = match.value;
+              sel.dispatchEvent(new Event('change', { bubbles: true }));
+              return;
             }
-            break;
           }
-        }
+        }, options.district);
       }
 
-      // Submit the form
-      const submitSelectors = [
-        'input[type="submit"]',
-        'button[type="submit"]',
-        '#edit-submit-projects-search',
-        '.form-submit'
-      ];
-      for (const sel of submitSelectors) {
-        const btn = await page.$(sel);
-        if (btn) {
-          await btn.click();
-          await page.waitForLoadState('networkidle');
-          break;
+      // Submit the SPECIFIC search form (not the site-wide search)
+      const submitted = await page.evaluate(() => {
+        const form = document.getElementById('projects-search-page-form');
+        if (!form) {
+          // Fallback: find form containing #edit-project-name
+          const input = document.getElementById('edit-project-name');
+          if (input) {
+            const parent = input.closest('form');
+            if (parent) { parent.submit(); return 'fallback-submit'; }
+          }
+          return 'no-form';
         }
-      }
+
+        // Try clicking submit button first (triggers JS handlers)
+        const submitBtn = form.querySelector('input[type="submit"], button[type="submit"]');
+        if (submitBtn) {
+          submitBtn.click();
+          return 'click';
+        }
+
+        // Fallback: form.submit()
+        form.submit();
+        return 'form-submit';
+      });
+
+      console.error(`[Portal A] Submit method: ${submitted}`);
+
+      await page.waitForLoadState('domcontentloaded', { timeout: 60000 }).catch(() => {});
+      await page.waitForTimeout(5000); // Allow AJAX results to render
     }
 
     await page.waitForTimeout(2000);
 
-    // Extract results from table
+    // Extract results from MahaRERA card layout
+    // Verified 2026-04-10: results are rendered as <strong>PROJECT NAME</strong>
+    // with adjacent <p class="darkBlue bold">Promoter Name</p> elements.
+    // NOT as a table — the only <table> on the page is the jQuery UI datepicker.
     const results = await page.evaluate(() => {
-      const tables = document.querySelectorAll('table');
       const data = [];
 
-      for (const table of tables) {
-        const headers = Array.from(table.querySelectorAll('thead th, tr:first-child th'))
-          .map(th => th.textContent.trim().toLowerCase());
+      // Strategy 1: Find all <strong> elements that look like project names
+      // (all caps, contain actual project keywords, etc.)
+      const strongEls = document.querySelectorAll('strong');
+      const projectNameEls = Array.from(strongEls).filter(el => {
+        const text = el.textContent?.trim() || '';
+        // Project names on MahaRERA are typically ALL CAPS and 3+ chars
+        return text.length >= 3 &&
+               text === text.toUpperCase() &&
+               !/^(SR|NO|#|&)/.test(text);
+      });
 
-        if (headers.length < 3) continue;
+      for (const nameEl of projectNameEls) {
+        // Find the containing card — walk up until we find a container
+        // with distinctive class or enough content
+        let card = nameEl.parentElement;
+        while (card && card.tagName !== 'BODY') {
+          const classes = card.className || '';
+          if (/project|row|card|result|item|box/i.test(classes)) break;
+          if (card.parentElement && card.parentElement.tagName === 'BODY') break;
+          card = card.parentElement;
+        }
+        if (!card) card = nameEl.parentElement;
 
-        const rows = table.querySelectorAll('tbody tr');
-        for (const row of rows) {
-          const cells = Array.from(row.querySelectorAll('td'));
-          if (cells.length < 3) continue;
+        // Extract promoter — typically <p class="darkBlue bold"> near the name
+        let promoterEl = null;
+        const siblings = Array.from(card.querySelectorAll('p'));
+        for (const p of siblings) {
+          if (/darkBlue|bold/i.test(p.className) && p !== nameEl) {
+            promoterEl = p;
+            break;
+          }
+        }
+        if (!promoterEl) {
+          // Fallback: any <p> sibling after the strong element
+          const nextP = nameEl.parentElement?.querySelector('p');
+          if (nextP) promoterEl = nextP;
+        }
 
-          const entry = {};
-          cells.forEach((cell, i) => {
-            const header = headers[i] || `col_${i}`;
-            entry[header.replace(/[^a-z0-9_]/g, '_')] = cell.textContent.trim();
+        // Extract RERA ID — typically starts with P5 or has pattern Pxxxxxxxxxxx
+        const cardText = card.textContent || '';
+        const reraIdMatch = cardText.match(/P\d{11,15}/);
 
-            // Capture links
-            const link = cell.querySelector('a');
-            if (link) entry[`${header.replace(/[^a-z0-9_]/g, '_')}_url`] = link.href;
-          });
+        // Extract district/location — look for "District:" label or location text
+        const districtMatch = cardText.match(/district[:\s]+([a-zA-Z\s]+?)(?:pincode|taluka|\n|$)/i);
+        const talukaMatch = cardText.match(/taluka[:\s]+([a-zA-Z\s]+?)(?:district|village|\n|$)/i);
+        const pincodeMatch = cardText.match(/pincode[:\s]+(\d{6})/i);
+        const completionMatch = cardText.match(/proposed[\s\w]*completion[\s\w]*[:\s]+([\d\/\-]+)/i);
 
+        // Extract detail URL
+        const link = card.querySelector('a[href*="project"], a[href*="certificate"]');
+
+        const entry = {
+          project_name: nameEl.textContent?.trim() || '',
+          promoter_name: promoterEl?.textContent?.trim() || '',
+          certificate_no: reraIdMatch?.[0] || '',
+          district: districtMatch?.[1]?.trim() || '',
+          taluka: talukaMatch?.[1]?.trim() || '',
+          pincode: pincodeMatch?.[1] || '',
+          proposed_completion: completionMatch?.[1]?.trim() || '',
+          detail_url: link?.href || ''
+        };
+
+        // Dedupe by project name (MahaRERA may render the same project multiple times)
+        if (!data.some(d => d.project_name === entry.project_name)) {
           data.push(entry);
         }
       }
 
-      // If no table found, try Drupal Views rows
+      // Fallback to table parsing if card extraction failed (for legacy support)
       if (data.length === 0) {
-        const viewRows = document.querySelectorAll('.views-row, .view-content > div');
-        for (const row of viewRows) {
-          const fields = {};
-          row.querySelectorAll('.views-field, .field').forEach(field => {
-            const label = field.querySelector('.views-label, .field--label')?.textContent?.trim() || '';
-            const value = field.querySelector('.field-content, .field--item')?.textContent?.trim()
-              || field.textContent.replace(label, '').trim();
-            if (label) fields[label.toLowerCase().replace(/[^a-z0-9_]/g, '_')] = value;
-          });
-          if (Object.keys(fields).length > 0) data.push(fields);
+        const tables = document.querySelectorAll('table');
+        for (const table of tables) {
+          // Skip calendar tables
+          if (/datepicker|calendar/i.test(table.className)) continue;
+
+          const headers = Array.from(table.querySelectorAll('thead th, tr:first-child th'))
+            .map(th => th.textContent.trim().toLowerCase());
+          if (headers.length < 3) continue;
+
+          const rows = table.querySelectorAll('tbody tr');
+          for (const row of rows) {
+            const cells = Array.from(row.querySelectorAll('td'));
+            if (cells.length < 3) continue;
+
+            const entry = { _from_table: true };
+            cells.forEach((cell, i) => {
+              const header = headers[i] || `col_${i}`;
+              entry[header.replace(/[^a-z0-9_]/g, '_')] = cell.textContent.trim();
+              const link = cell.querySelector('a');
+              if (link) entry[`${header.replace(/[^a-z0-9_]/g, '_')}_url`] = link.href;
+            });
+            data.push(entry);
+          }
         }
       }
 
       return data;
     });
 
-    // Normalize field names across different table formats
-    const normalized = results.map(r => ({
-      certificate_no: r.certificate_no_ || r.certificate_no || r.registration_no || r.col_0 || '',
-      project_name: r.project_name || r.name_of_the_project || r.col_1 || '',
-      promoter_name: r.promoter_name || r.name_of_the_promoter || r.col_2 || '',
-      district: r.district || r.col_3 || '',
-      taluka: r.taluka || r.col_4 || '',
-      division: r.division || r.col_5 || '',
-      pincode: r.pincode || '',
-      proposed_completion: r.proposed_date_of_completion || r.completion_date || r.col_6 || '',
-      certificate_status: r.certificate_status || r.status || '',
-      last_modified: r.last_modified || r.last_modified_date || '',
-      detail_url: r.certificate_no__url || r.project_name_url || ''
-    }));
+    // Results are already normalized from card extraction — pass through
+    const normalized = results;
 
     return {
       portal: 'A',
@@ -347,46 +437,83 @@ async function searchPromoters(name) {
 
   try {
     console.error(`[Portal A] Searching promoters: "${name}"`);
-    await page.goto(PORTAL_A.promoterSearch, { waitUntil: 'networkidle', timeout: 30000 });
+    // Use domcontentloaded — the portal has slow network idle
+    await page.goto(PORTAL_A.promoterSearch, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.waitForTimeout(3000);
 
-    // Fill promoter name
-    const selectors = [
-      'input[name*="promoter"]',
-      '#edit-field-promoter-name-value',
-      'input[type="text"]'
-    ];
-    for (const sel of selectors) {
-      const input = await page.$(sel);
-      if (input) { await input.fill(name); break; }
+    // Fill promoter name — try visible inputs only
+    const filled = await page.evaluate((searchName) => {
+      const inputs = Array.from(document.querySelectorAll('input[type="text"], input[type="search"]'));
+      const visible = inputs.filter(i => {
+        const rect = i.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 && !i.disabled && !i.readOnly;
+      });
+      if (visible.length === 0) return false;
+      // Use the first visible text input (or one matching promoter/name)
+      const target = visible.find(i =>
+        (i.name && /promoter|name|search/i.test(i.name)) ||
+        (i.id && /promoter|name|search/i.test(i.id))
+      ) || visible[0];
+      target.focus();
+      target.value = searchName;
+      target.dispatchEvent(new Event('input', { bubbles: true }));
+      target.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    }, name);
+
+    if (!filled) {
+      console.error(`[Portal A] No visible input field found`);
+      await saveDebugSnapshot(page, 'maharera-promoter-no-input');
     }
 
-    // Submit
-    const submitSelectors = ['input[type="submit"]', 'button[type="submit"]', '.form-submit'];
-    for (const sel of submitSelectors) {
-      const btn = await page.$(sel);
-      if (btn) {
-        await btn.click();
-        await page.waitForLoadState('networkidle');
-        break;
-      }
-    }
-    await page.waitForTimeout(2000);
+    // Submit — use evaluate to click visible submit buttons
+    await page.evaluate(() => {
+      const buttons = Array.from(document.querySelectorAll('input[type="submit"], button[type="submit"], button.form-submit, .form-submit'));
+      const visible = buttons.filter(b => {
+        const rect = b.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 && !b.disabled;
+      });
+      if (visible.length > 0) visible[0].click();
+    });
 
-    // Extract results
+    await page.waitForLoadState('domcontentloaded', { timeout: 30000 }).catch(() => {});
+    await page.waitForTimeout(3000);
+
+    // Extract results — try multiple table patterns
     const results = await page.evaluate(() => {
-      const rows = document.querySelectorAll('table tbody tr');
-      return Array.from(rows).map(row => {
-        const cells = Array.from(row.querySelectorAll('td'));
-        if (cells.length < 2) return null;
-        const getText = i => cells[i]?.textContent?.trim() || '';
-        return {
-          promoter_name: getText(0),
-          registration_no: getText(1),
-          district: cells.length > 2 ? getText(2) : '',
-          projects_count: cells.length > 3 ? getText(3) : '',
-          detail_url: cells[0]?.querySelector('a')?.href || ''
-        };
-      }).filter(Boolean);
+      const promoterKeywords = ['promoter', 'name', 'registration', 'district'];
+      const tables = document.querySelectorAll('table');
+      let data = [];
+
+      for (const table of tables) {
+        const rows = table.querySelectorAll('tr');
+        if (rows.length < 2) continue;
+
+        // Check header row
+        const headers = Array.from(rows[0].querySelectorAll('th, td'))
+          .map(c => c.textContent?.trim().toLowerCase() || '');
+        const isPromoterTable = headers.some(h =>
+          promoterKeywords.some(kw => h.includes(kw))
+        );
+        if (!isPromoterTable && data.length === 0) continue;
+
+        for (let i = 1; i < rows.length; i++) {
+          const cells = Array.from(rows[i].querySelectorAll('td'));
+          if (cells.length < 2) continue;
+          const getText = j => cells[j]?.textContent?.trim() || '';
+          data.push({
+            promoter_name: getText(0),
+            registration_no: getText(1),
+            district: cells.length > 2 ? getText(2) : '',
+            projects_count: cells.length > 3 ? getText(3) : '',
+            detail_url: cells[0]?.querySelector('a')?.href || ''
+          });
+        }
+
+        if (data.length > 0) break;
+      }
+
+      return data;
     });
 
     const output = {
@@ -398,7 +525,15 @@ async function searchPromoters(name) {
       results
     };
 
-    if (results.length > 0) writeCache('promoter-search', name, output);
+    if (results.length > 0) {
+      writeCache('promoter-search', name, output);
+    } else {
+      // Save debug snapshot for inspection
+      await saveDebugSnapshot(page, 'maharera-promoter-zero-results');
+      const structure = await logPageStructure(page);
+      console.error(`[MahaRERA] Zero results. Structure:`, JSON.stringify(structure, null, 2));
+    }
+
     return output;
 
   } catch (error) {
