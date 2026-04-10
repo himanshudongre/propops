@@ -26,9 +26,11 @@ claude
 PropOps auto-detects it's a first run and walks you through setup:
 
 1. **Buyer Brief** -- your budget, target areas, configuration, deal-breakers
-2. **Profile** -- your name, timeline, loan status
-3. **Sources** -- data source configuration (IGRS, MahaRERA, eCourts)
+2. **Profile** -- your name, timeline, loan status, financial details (for finance mode)
+3. **Sources** -- data source configuration (state-specific IGRS + RERA + eCourts)
 4. **Telegram Alerts** -- optional push notifications
+
+PropOps auto-detects your target state from your buyer brief and routes to the appropriate scrapers. Currently supported states with FULL IGRS + RERA support: Maharashtra, Karnataka, Telangana. RERA-only: Tamil Nadu, Uttar Pradesh.
 
 ### 3. Start Using
 
@@ -44,6 +46,9 @@ PropOps auto-detects it's a first run and walks you through setup:
 /propops litigation Lodha   # Check legal cases against builder
 /propops compare            # Compare shortlisted properties
 /propops tracker            # View your property pipeline
+/propops agreement-review   # Review a builder agreement for traps
+/propops site-visit         # Generate property-specific site visit checklist
+/propops post-purchase      # Track delays, draft RERA complaints
 ```
 
 ## Detailed Setup
@@ -80,6 +85,30 @@ Test it:
 ```bash
 node scripts/telegram-bot.mjs test
 ```
+
+### State-Specific Setup
+
+**Maharashtra (IGRS):** No setup needed. When the scraper hits a CAPTCHA, it screenshots the image and shows it to you in chat. Type the CAPTCHA text, and the agent continues.
+
+**Karnataka (Kaveri):** Requires a one-time manual login. Kaveri uses phone + OTP authentication, so PropOps opens a browser window for you to log in manually:
+
+```bash
+node scripts/scrapers/kaveri-karnataka.mjs login
+```
+
+This opens a headful browser. Enter your phone number, solve the CAPTCHA, receive the OTP on your phone, and complete the login. The script detects successful login and saves the session. After that, you can run queries freely for ~8 hours without re-logging in.
+
+```bash
+# Check session status
+node scripts/scrapers/kaveri-karnataka.mjs session-status
+
+# Clear session (forces re-login next time)
+node scripts/scrapers/kaveri-karnataka.mjs logout
+```
+
+**Telangana (IGRS):** Same CAPTCHA-in-chat pattern as Maharashtra. No upfront setup.
+
+**Tamil Nadu (TNRERA), Karnataka (K-RERA), Telangana (TG-RERA), UP-RERA:** No setup. Public HTML tables, no CAPTCHA, no auth.
 
 ### Dashboard TUI (Optional)
 
@@ -143,14 +172,32 @@ npx playwright install chromium
 ```
 
 ### IGRS CAPTCHA won't load
-The IGRS portal can be slow. Try:
+Maharashtra and Telangana IGRS portals can be slow. Try:
 - Running during off-peak hours (early morning IST)
 - Using `--interactive` mode to see the browser
+
+### Kaveri session expired
+Kaveri sessions last ~8 hours. If you get `session_expired`:
+
+```bash
+node scripts/scrapers/kaveri-karnataka.mjs login
+```
+
+Re-run the manual login flow.
 
 ### MahaRERA returns empty results
 Try searching with different name variations:
 - Full legal entity name vs brand name
 - With/without "Ltd", "LLP", "Pvt"
+
+### Builder has history I should see but PropOps doesn't find it
+This is the "previous projects field is empty" problem. Run the promoter resolver to cross-reference identity:
+
+```bash
+node scripts/promoter-resolver.mjs resolve --name "Builder Name"
+```
+
+It will find related legal entities (SPVs, parent company, etc.) and aggregate projects across all of them — catching history that the RERA project page form field misses.
 
 ### Telegram bot not sending
 1. Verify token: `node scripts/telegram-bot.mjs test`

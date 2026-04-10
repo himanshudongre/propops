@@ -135,36 +135,96 @@ Or just paste a property URL or listing -- PropOps auto-detects it and runs the 
 ## How It Works
 
 ```
-You paste a property listing URL
-        |
-        v
-+----------------------+
-|  Multi-Source Lookup  |  IGRS (prices), MahaRERA (builder), eCourts (litigation)
-|  (Playwright + API)  |
-+----------+-----------+
-           |
-+----------v-----------+
-|  7-Block AI Analysis |  Price intel, builder score, risks, location,
-|  (A-G Evaluation)    |  AI suggestions, negotiation strategy
-+----------+-----------+
-           |
-    +------+------+----------+
-    v      v      v          v
- Report   Score  Tracker   Telegram
-  .md     /10    .md       Alert
+  You paste a property URL, or ask about a builder/area
+                        |
+                        v
+          +-------------------------+
+          |  CLAUDE.md routes to    |
+          |  the right mode (19)    |
+          +------------+------------+
+                       |
+          +------------v------------+
+          |   State Detection       |  Detects which state from
+          |   (state-registry.mjs)  |  address, city, or RERA ID
+          +------------+------------+
+                       |
+       +---------------+---------------+------------------+
+       v               v               v                  v
+  +----------+   +----------+   +----------+       +-----------+
+  | IGRS     |   | RERA     |   | eCourts  |       | Property  |
+  | (prices) |   | (builder)|   |(litigation)|     | Portals   |
+  +----+-----+   +----+-----+   +----+-----+       +-----+-----+
+       |              |              |                    |
+  Per-state:     Per-state:    National API         WebSearch:
+  - Maharashtra  - MahaRERA    - Kleopatra          - 99acres
+  - Kaveri (KA)  - K-RERA      - Playwright         - MagicBricks
+  - Telangana    - TG-RERA       fallback           - Housing.com
+  - (more)       - TNRERA
+                 - UP-RERA
+                 + MoHUA unified portal
+                       |
+          +------------v------------+
+          |  Promoter Resolver      |  Fuzzy match across legal
+          |  (cross-entity linkage) |  entities (name, phones,
+          +------------+------------+  directors, addresses, PIN)
+                       |
+          +------------v------------+
+          |  7-Block AI Analysis    |  A: Summary
+          |  (A-G Evaluation)       |  B: Price Intelligence
+          +------------+------------+  C: Builder Score
+                       |                D: Risk Flags
+                       |                E: Location
+                       |                F: AI Recommendation
+                       |                G: Negotiation
+                       |
+       +---------------+----------------+---------------+
+       v               v                v               v
+   Reports       Tracker          Telegram        Dashboard
+   (.md)         (properties.md)  Alerts          (Go TUI)
+
+Plus lifecycle modes for post-decision actions:
+   agreement-review - parse builder contracts for legal traps
+   site-visit       - generate property-specific inspection checklist
+   post-purchase    - track delays, draft RERA complaints, OC status
+   finance          - affordability, bank comparison, buy-vs-rent, tax
 ```
 
 ## Data Sources
 
 All data comes from **publicly available government portals**:
 
+### Registration Prices (What People Actually Paid)
+
+| Source | State/Coverage | Trust Level |
+|--------|---------------|-------------|
+| **IGRS Maharashtra** (`freesearchigrservice.maharashtra.gov.in`) | Mumbai from 1985, rest of MH from 2002 | Highest |
+| **Kaveri Karnataka** (`kaveri.karnataka.gov.in`) | Bangalore and all Karnataka, OTP login required | Highest |
+| **IGRS Telangana** (`registration.telangana.gov.in`) | Hyderabad and all 33 districts from 1983 | Highest |
+
+### Builder & Project Registrations (RERA)
+
+| Source | State/Coverage | Trust Level |
+|--------|---------------|-------------|
+| **MahaRERA** (`maharera.maharashtra.gov.in`) | All Maharashtra RERA-registered projects | High |
+| **K-RERA** (`rera.karnataka.gov.in`) | All Karnataka RERA projects | High |
+| **TG-RERA** (`rera.telangana.gov.in`) | Hyderabad metro + all Telangana | High |
+| **TNRERA** (`rera.tn.gov.in`) | Chennai + Tamil Nadu + Andaman & Nicobar | High |
+| **UP-RERA** (`www.up-rera.in`) | Noida, Greater Noida, Ghaziabad + all UP | High |
+| **Unified RERA (MoHUA)** (`rera.mohua.gov.in`) | National aggregator, 35 states, 151K+ projects | High |
+
+### Litigation
+
+| Source | Coverage | Trust Level |
+|--------|----------|-------------|
+| **eCourts (Kleopatra API)** | 700+ district courts, High Courts, NCLT, Consumer Forum — all India | High |
+| **eCourts Playwright fallback** | Same, when API is unavailable | High |
+
+### Market Data (for Context)
+
 | Source | What It Provides | Trust Level |
 |--------|-----------------|-------------|
-| **IGRS Maharashtra** | Actual registration prices (what people really paid) | Highest |
-| **MahaRERA** | Builder projects, complaints, compliance, delivery status | High |
-| **eCourts India** | Litigation against builders/properties | High |
-| **99acres / MagicBricks** | Current listings and asking prices | Medium |
-| **WebSearch** | Market trends, builder news, area reviews | Context |
+| **99acres / MagicBricks / Housing.com** | Current listings and asking prices | Medium |
+| **WebSearch / WebFetch** | Market trends, bank rates, builder news, area reviews | Context only |
 
 ## Scoring System
 
@@ -211,16 +271,24 @@ propops/
 |   +-- alert.md              # Telegram alert configuration
 |   +-- tracker.md            # Pipeline management
 |   +-- batch.md              # Parallel evaluation
-+-- scripts/                  # Scraping & utility scripts
-|   +-- igrs-scraper.mjs      # IGRS registration prices (CAPTCHA-aware)
-|   +-- maharera-scraper.mjs  # MahaRERA builder/project data
-|   +-- ecourts-search.mjs    # Litigation search (API + Playwright)
-|   +-- telegram-bot.mjs      # Telegram notifications
-|   +-- forecast-engine.mjs   # Price trend analysis
-|   +-- merge-tracker.mjs     # Tracker merge + dedup
-|   +-- verify-pipeline.mjs   # Data health check
++-- scripts/                        # Utility scripts + scrapers
+|   +-- igrs-scraper.mjs            # IGRS Maharashtra (CAPTCHA-aware)
+|   +-- maharera-scraper.mjs        # MahaRERA builder/project data
+|   +-- ecourts-search.mjs          # Litigation search (API + Playwright)
+|   +-- telegram-bot.mjs            # Telegram notifications
+|   +-- forecast-engine.mjs         # Price trend analysis
+|   +-- merge-tracker.mjs           # Tracker merge + dedup
+|   +-- verify-pipeline.mjs         # Data health check
+|   +-- promoter-resolver.mjs       # Fuzzy builder identity resolution
 |   +-- scrapers/
-|       +-- state-registry.mjs # Central config for all Indian state portals
+|       +-- state-registry.mjs      # Central config for all Indian state portals
+|       +-- rera-national.mjs       # MoHUA unified RERA portal (35 states)
+|       +-- kaveri-karnataka.mjs    # Karnataka IGRS (OTP login)
+|       +-- krera-karnataka.mjs     # Karnataka RERA
+|       +-- igrs-telangana.mjs      # Telangana IGRS (CAPTCHA-aware)
+|       +-- tsrera.mjs              # Telangana RERA
+|       +-- tnrera.mjs              # Tamil Nadu RERA (easiest, static PHP)
+|       +-- uprera.mjs              # UP-RERA (Noida/Greater Noida/Ghaziabad)
 +-- data/                     # Tracker, cache, history (gitignored)
 +-- reports/                  # Generated evaluation reports (gitignored)
 +-- templates/                # Config templates
@@ -260,13 +328,11 @@ Run /propops evaluate for full report
 | **Tamil Nadu** (Chennai) | Planned | ✅ Full | ✅ Via API | 🚧 RERA live |
 | **Delhi NCR** (Delhi, Gurgaon) | Planned | Planned | ✅ Via API | 📋 Roadmap |
 
-**Plus: Unified National RERA Portal** (`rera.mohua.gov.in`) — launched Sept 2025 by MoHUA, aggregates 35 states/UTs with 151,113+ projects. PropOps has a scraper for this too.
+**Plus: Unified National RERA Portal** (`rera.mohua.gov.in`) — launched September 2025 by MoHUA. Aggregates 35 states/UTs with 151,113+ projects, 106,545+ agents, 147,383+ disposed complaints. PropOps has a scraper for this (`rera-national.mjs`).
+
+**eCourts litigation search works nationally** via the Kleopatra API wrapper (with Playwright fallback) — all states covered for legal case lookups. IGRS portals are state-specific.
 
 Karnataka Kaveri and IGRS Telangana use human-in-the-loop authentication — you solve the CAPTCHA (or log in manually once for Kaveri), and the agent handles the rest. Aggressive caching minimizes friction.
-
-**Plus: Unified National RERA Portal** (`rera.mohua.gov.in`) — launched Sept 2025 by MoHUA, covers 35 states/UTs with 151,113+ projects. PropOps has a scraper for this as well (`rera-national.mjs`).
-
-**eCourts litigation search works nationally** via the Kleopatra API wrapper — all states covered for legal case lookups. IGRS portals are state-specific.
 
 The state registry (`scripts/scrapers/state-registry.mjs`) defines all configurations. Adding a new state is as simple as writing one scraper file matching the base interface.
 
@@ -278,9 +344,11 @@ The highest-impact contribution to PropOps is adding IGRS/RERA scraper support f
 
 | Component | Technology |
 |-----------|-----------|
-| Agent | Claude Code with 16 custom modes |
-| Scraping | Playwright (IGRS, MahaRERA, property portals) |
-| Litigation | eCourts API (Kleopatra) + Playwright fallback |
+| Agent | Claude Code with 19 custom modes |
+| Scraping | Playwright (IGRS, RERA portals across 5 states, property portals) |
+| State Routing | `state-registry.mjs` — central config mapping cities/states to scrapers |
+| Builder Linkage | `promoter-resolver.mjs` — fuzzy identity resolution across legal entities |
+| Litigation | eCourts API (Kleopatra, free tier) + Playwright fallback |
 | Market Data | WebSearch + WebFetch for trends, rates, news |
 | Alerts | Telegram Bot API |
 | Data | Markdown tables + YAML config + TSV batch |
