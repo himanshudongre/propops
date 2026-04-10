@@ -106,7 +106,7 @@ export const STATES = {
     major_cities: ['Bangalore', 'Mysore', 'Mangalore', 'Hubli'],
 
     igrs: {
-      enabled: false,
+      enabled: true,
       primary_url: 'https://kaveri.karnataka.gov.in/',
       name: 'Kaveri Online Services 2.0',
       operator: 'Department of Stamps & Registration (built with C-DAC)',
@@ -114,11 +114,14 @@ export const STATES = {
       has_captcha: true,
       captcha_type: 'image',
       requires_login: true,
-      login_method: 'Mobile + OTP',
+      login_method: 'Mobile + OTP (human-in-the-loop session handoff)',
       difficulty: 'HIGH',
       scraper: 'kaveri-karnataka.mjs',
+      session_file: 'data/kaveri-session.json',
+      session_validity_hours: 8,
       search_params: ['district', 'taluk', 'hobli', 'village', 'survey_number', 'registration_number', 'party_name', 'document_type', 'date_range'],
-      notes: 'HARDEST of the four states. Login wall + CAPTCHA + rate limiting. Consider Landeed commercial API as alternative.',
+      features: ['EC search', 'Market value (guidance value)', 'Deed details'],
+      notes: 'HARD. User logs in manually once, session cookies saved for 8 hours. Aggressive caching (7 days) minimizes re-login friction.',
       alt_approach: {
         zen_citizen: 'https://zencitizen.in/2024/11/07/kaveri-village-finder/',
         landeed: 'https://web.landeed.com/karnataka/ec-encumbrance-certificate'

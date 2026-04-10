@@ -36,6 +36,109 @@ If the user provides a common name, search RERA for the exact legal entity name(
 
 ---
 
+## CRITICAL: Known Limitations (Disclose Upfront)
+
+Before running the analysis, always show these caveats to the buyer so they calibrate expectations correctly. **Never present this mode's output as ground truth.**
+
+```
+## Limitations of This Report
+
+1. **RERA "previous projects" field is often empty**
+   RERA project forms frequently have the previous projects section left
+   blank, even when the same builder has completed prior projects. This
+   means naive analysis can MISS a builder's history entirely.
+
+   How PropOps handles this: Step 0 uses the promoter-resolver to
+   cross-reference projects across related legal entities. This is more
+   robust than trusting the project page form field, but not perfect.
+   Builders can still hide history by using unrelated SPV entities with
+   different names, phone numbers, and addresses.
+
+2. **RERA is a disclosure framework, not enforcement**
+   A RERA registration proves the builder filed paperwork. It does NOT
+   prove quality, timely delivery, or ethical behavior. RERA authorities
+   have limited execution powers. Treat RERA data as a signal, not a
+   guarantee.
+
+3. **Linkage across legal entities is fuzzy**
+   Builder groups operate through multiple SPV companies. The resolver
+   matches on company name, directors, phones, emails, and addresses —
+   but it can miss linkages if the builder deliberately isolates entities.
+
+4. **Court and complaint data has lag**
+   eCourts and RERA complaint data may be 2-8 weeks behind reality.
+   A clean record today doesn't mean no complaints will surface tomorrow.
+
+5. **PropOps combines signals; no single signal is sufficient**
+   Use this report alongside: IGRS registration prices, eCourts
+   litigation, WebSearch reputation, physical site visits, and
+   conversations with existing residents of the builder's past projects.
+   Never rely solely on one source.
+```
+
+---
+
+## Step 0: Promoter Identity Resolution
+
+Before searching RERA, resolve the builder's full identity across related legal entities. This addresses the #1 gap in naive builder evaluation — missing projects registered under different SPV names.
+
+### Process
+
+Run the promoter resolver on cached data first:
+
+```bash
+node scripts/promoter-resolver.mjs resolve --name "{builder name}"
+```
+
+The resolver cross-references using:
+- **Company name** (with legal suffix normalization): "Macrotech Developers Ltd" matches "Macrotech Developers Private Limited"
+- **Brand core extraction**: "Lodha Crown Realty LLP" extracts "lodha crown" which matches "Lodha Developers"
+- **Phone numbers**: Same contact number across projects = likely same builder
+- **Email domain**: Same company email domain = likely same builder
+- **Registered address**: Same PIN code and address keywords = likely same builder
+- **Directors/partners**: Overlapping director names across companies = linked entities
+
+### Output
+
+```
+## 0. Promoter Identity Resolution
+
+**Builder queried:** {name}
+**Resolution confidence:** HIGH / MEDIUM / LOW
+
+### Related Legal Entities Found
+
+| # | Legal Entity Name | Similarity Score | Evidence |
+|---|------------------|------------------|----------|
+| 1 | {entity 1} | 1.0 (exact) | Direct name match |
+| 2 | {entity 2} | 0.75 | Same phone, same brand core |
+| 3 | {entity 3} | 0.55 | Same director, same PIN |
+
+### Aggregated Project Count
+
+| Entity | Projects Found |
+|--------|---------------|
+| {entity 1} | {X} |
+| {entity 2} | {Y} |
+| {entity 3} | {Z} |
+| **Total unique projects** | **{X+Y+Z}** |
+
+### IMPORTANT
+
+This is significantly more comprehensive than the RERA "previous projects"
+form field alone. However, the resolver CANNOT detect:
+- Builders using completely unrelated shell entities
+- Cross-family ownership without public linkage
+- Name-changed entities with all new contact details
+
+If the resolver finds only ONE entity for a large builder, be suspicious —
+they likely have more projects under names we haven't linked yet.
+```
+
+If the resolver returns multiple entities, run Steps 1-4 on EACH of them and aggregate the results into a single combined portfolio. Label each project with which legal entity registered it so the user can verify.
+
+---
+
 ## Step 1: MahaRERA Project Portfolio
 
 Search the RERA portal (MahaRERA for Maharashtra, or relevant state portal) for all projects registered under this builder/promoter.

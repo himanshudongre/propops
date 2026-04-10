@@ -26,6 +26,7 @@ These files belong to the user. Updates will NEVER modify, replace, or delete th
 | `data/builder-cache/*` | Cached builder/RERA data |
 | `data/price-history/*` | Historical price trend data |
 | `data/post-purchase/*` | Per-property tracking after booking (delays, OC, complaints) |
+| `data/kaveri-session.json` | Authenticated Kaveri session (cookies from manual login) |
 | `reports/*` | Generated evaluation reports |
 
 ## System Layer (auto-updatable)
@@ -55,8 +56,13 @@ These files define system behavior. They can be replaced by updates without losi
 | `modes/batch.md` | Batch evaluation mode |
 | `modes/_profile.template.md` | Template for user's _profile.md |
 | `scripts/*.mjs` | All utility scripts |
+| `scripts/promoter-resolver.mjs` | Fuzzy matches builder identity across legal entities |
 | `scripts/scrapers/*.mjs` | State-specific scrapers (Karnataka, Telangana, Delhi NCR, etc.) |
 | `scripts/scrapers/state-registry.mjs` | Central registry of state portal configurations |
+| `scripts/scrapers/kaveri-karnataka.mjs` | Kaveri IGRS scraper (Karnataka, OTP login) |
+| `scripts/scrapers/krera-karnataka.mjs` | Karnataka RERA scraper |
+| `scripts/scrapers/tnrera.mjs` | Tamil Nadu RERA scraper |
+| `scripts/scrapers/rera-national.mjs` | Unified MoHUA RERA portal scraper |
 | `batch/batch-prompt.md` | Batch worker prompt |
 | `batch/batch-runner.sh` | Batch orchestrator |
 | `templates/*` | Configuration templates |

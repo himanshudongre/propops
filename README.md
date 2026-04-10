@@ -51,6 +51,16 @@ PropOps covers the **entire property buying lifecycle** — from discovery to po
 | **Due Diligence** | 7-section pre-purchase checklist: RERA, builder, litigation, price, title, physical, financial. |
 | **Property Comparison** | Side-by-side comparison with weighted scoring, head-to-head metrics, and AI recommendation. |
 
+### Builder Identity Resolution
+
+A common critique of naive builder evaluation: the RERA "previous projects" field is often blank, so you'd evaluate Project C without knowing Project A by the same builder was a disaster. PropOps addresses this head-on with a fuzzy identity resolver.
+
+| Feature | Description |
+|---------|-------------|
+| **Promoter Resolver** | Cross-references builder identity across legal entities using company name, directors, phones, email domains, and registered addresses. More robust than trusting RERA form fields. |
+| **Entity Graph** | Visualizes all related legal entities and projects for a builder. Catches SPV structures most buyers never notice. |
+| **Transparency** | Every report shows known limitations upfront. RERA data is a disclosure signal, not a quality guarantee — PropOps says so explicitly. |
+
 ### Post-Purchase Protection
 
 | Feature | Description |
@@ -243,12 +253,14 @@ Run /propops evaluate for full report
 
 | State | IGRS (Actual Prices) | RERA | eCourts | Status |
 |-------|---------------------|------|---------|--------|
-| **Maharashtra** (Mumbai, Pune, Thane) | Full | Full | Full | ✅ Production |
-| **Karnataka** (Bangalore) | Planned | ✅ Full | Via API | ✅ RERA live |
-| **Tamil Nadu** (Chennai) | Planned | ✅ Full | Via API | ✅ RERA live |
-| **Telangana** (Hyderabad) | Planned | Planned | Via API | 🚧 In development |
-| **Delhi NCR** (Delhi, Gurgaon, Noida) | Planned | Planned | Via API | 🚧 In development |
-| **Uttar Pradesh** (Noida/Greater Noida) | Planned | Planned | Via API | 📋 Roadmap |
+| **Maharashtra** (Mumbai, Pune, Thane) | ✅ Full | ✅ Full | ✅ Full | ✅ Production |
+| **Karnataka** (Bangalore) | ✅ Full (Kaveri) | ✅ Full | ✅ Via API | ✅ **Production** |
+| **Tamil Nadu** (Chennai) | Planned | ✅ Full | ✅ Via API | 🚧 RERA live |
+| **Telangana** (Hyderabad) | Planned | Planned | ✅ Via API | 📋 Roadmap |
+| **Delhi NCR** (Delhi, Gurgaon, Noida) | Planned | Planned | ✅ Via API | 📋 Roadmap |
+| **Uttar Pradesh** (Noida/Greater Noida) | Planned | Planned | ✅ Via API | 📋 Roadmap |
+
+Karnataka Kaveri uses human-in-the-loop session handoff — you log in manually once (phone + OTP + CAPTCHA), and the session is reused for 8 hours. Aggressive caching minimizes re-login friction.
 
 **Plus: Unified National RERA Portal** (`rera.mohua.gov.in`) — launched Sept 2025 by MoHUA, covers 35 states/UTs with 151,113+ projects. PropOps has a scraper for this as well (`rera-national.mjs`).
 
