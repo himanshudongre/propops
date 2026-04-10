@@ -17,25 +17,58 @@ This mode activates when the user says:
 - "Legal check for {builder}"
 - "Is {builder} in any court cases?"
 
-## Step 1: eCourts Search
+## Step 0: Promoter Identity Resolution (Recommended)
 
-Run eCourts search for the builder/developer:
+Before searching eCourts, resolve the builder's full identity across related legal entities so you search ALL of them, not just the one the user provided:
 
 ```bash
-node scripts/ecourts-search.mjs party-name --name "{builder name}" --state "maharashtra"
+node scripts/promoter-resolver.mjs resolve --name "{builder name}"
 ```
 
-If the builder operates through multiple legal entities (common for large groups), search each entity name:
+This catches SPVs, parent companies, and related entities that may have litigation under different names.
+
+## Step 1: eCourts Search (national, state-agnostic)
+
+eCourts via the Kleopatra API works for ALL Indian states. Set the state code for filtering, but the scraper itself is not state-specific:
+
+```bash
+node scripts/ecourts-search.mjs party-name --name "{builder name}" --state "MH"
+```
+
+State codes: `MH` (Maharashtra), `KA` (Karnataka), `TG` (Telangana), `TN` (Tamil Nadu), `UP` (Uttar Pradesh), `DL` (Delhi), `GJ` (Gujarat), etc. If unsure, omit the `--state` flag for a nationwide search.
+
+If the builder operates through multiple legal entities (common for large groups), search each entity name returned by the promoter resolver:
 - Company name (e.g., "Godrej Properties Limited")
 - Brand name (e.g., "Godrej Properties")
 - SPV names if known (e.g., "Godrej Keshav Nagar LLP")
 
-## Step 2: RERA Complaint Cross-Reference
+## Step 2: RERA Complaint Cross-Reference (state-specific)
 
-Also check MahaRERA for formal complaints:
+Check the RERA portal for formal complaints. Use the state-specific scraper based on where the builder operates:
 
+**Maharashtra:**
 ```bash
 node scripts/maharera-scraper.mjs search-promoter --name "{builder name}"
+```
+
+**Karnataka:**
+```bash
+node scripts/scrapers/krera-karnataka.mjs builder --name "{builder name}"
+```
+
+**Telangana:**
+```bash
+node scripts/scrapers/tsrera.mjs builder --name "{builder name}"
+```
+
+**Tamil Nadu:**
+```bash
+node scripts/scrapers/tnrera.mjs builder --name "{builder name}"
+```
+
+**Uttar Pradesh (Noida/Ghaziabad):**
+```bash
+node scripts/scrapers/uprera.mjs builder --name "{builder name}"
 ```
 
 Extract complaint count and categories from RERA project pages.

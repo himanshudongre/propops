@@ -139,14 +139,49 @@ If the resolver returns multiple entities, run Steps 1-4 on EACH of them and agg
 
 ---
 
-## Step 1: MahaRERA Project Portfolio
+## Step 1: RERA Project Portfolio (state-specific)
 
-Search the RERA portal (MahaRERA for Maharashtra, or relevant state portal) for all projects registered under this builder/promoter.
+First, determine the state(s) where this builder operates. Then use the appropriate RERA scraper — see the State Routing Protocol in `_shared.md` for full details.
+
+### Scraper Commands by State
+
+**Maharashtra (MahaRERA):**
+```bash
+node scripts/maharera-scraper.mjs search-promoter --name "{builder name}"
+node scripts/maharera-scraper.mjs search-project --name "{builder name}"
+```
+
+**Karnataka (K-RERA):**
+```bash
+node scripts/scrapers/krera-karnataka.mjs builder --name "{builder name}"
+```
+
+**Telangana (TG-RERA):**
+```bash
+node scripts/scrapers/tsrera.mjs builder --name "{builder name}"
+```
+
+**Tamil Nadu (TNRERA):**
+```bash
+node scripts/scrapers/tnrera.mjs builder --name "{builder name}"
+```
+
+**Uttar Pradesh (UP-RERA):**
+```bash
+node scripts/scrapers/uprera.mjs builder --name "{builder name}"
+```
+
+**Any state (national MoHUA aggregator):**
+```bash
+node scripts/scrapers/rera-national.mjs search --promoter "{builder name}"
+```
+
+For a builder operating in multiple states, run ALL the relevant state scrapers and aggregate the results. Large builders (Lodha, Godrej, Prestige, Sobha, etc.) typically have projects across multiple states.
 
 ### Search Method
 
-1. Search by promoter name on the RERA portal
-2. If multiple entities found, search each one
+1. Use the state-specific scraper(s) above
+2. If the promoter resolver (Step 0) found multiple legal entities, run the scraper for EACH entity
 3. For each project found, extract:
 
 | Field | Description |

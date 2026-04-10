@@ -8,7 +8,7 @@ Full 7-block (A-G) property evaluation. This is the core mode of PropOps.
 
 Before starting any evaluation:
 
-1. Read `modes/_shared.md` — load scoring system, rules, data hierarchy
+1. Read `modes/_shared.md` — load scoring system, rules, data hierarchy, AND the **State Routing Protocol** section
 2. Read `modes/_profile.md` — load user overrides (if file exists)
 3. Read `data/buyer-brief.md` — load buyer requirements (if file exists)
 4. Gather the property input: URL, project name, or RERA ID
@@ -23,9 +23,41 @@ The user provides one of:
 - A RERA ID (e.g., "P52100012345")
 - A builder name + project name
 
-From any input, extract: **project name, builder name, location, configuration, quoted price**.
+From any input, extract: **project name, builder name, location (city + state), configuration, quoted price**.
 
 If the input is a URL, use WebFetch to extract listing details. If the page requires JavaScript rendering, use Playwright instead.
+
+---
+
+## Step 0: State Detection and Routing (MANDATORY)
+
+**Before any data collection, determine the state and look up the correct scrapers.**
+
+Follow the **State Routing Protocol** in `_shared.md`:
+
+1. **Detect state** from city, URL, or address
+2. **Look up config**:
+   ```bash
+   node scripts/scrapers/state-registry.mjs get {state-or-city}
+   ```
+3. **Note the scrapers** you'll use for this property:
+   - IGRS scraper (may require session/CAPTCHA)
+   - RERA scraper
+   - eCourts always works nationally
+
+If the state is not yet supported, announce this to the user and fall back to WebSearch with clear labeling.
+
+Example decision log to include in your work:
+
+```
+## State Routing
+
+- Detected state: Karnataka (from "Bangalore" in listing URL)
+- IGRS scraper: scripts/scrapers/kaveri-karnataka.mjs (OTP login required)
+- RERA scraper: scripts/scrapers/krera-karnataka.mjs (public, no auth)
+- eCourts: national API
+- Kaveri session status: [check before proceeding]
+```
 
 ---
 
@@ -94,19 +126,43 @@ Proceed with extreme caution.
 
 ### Step 1: IGRS Registration Data (Primary Source)
 
-Search the IGRS portal (igrmaharashtra.gov.in for Maharashtra) for actual registration prices:
+**Use the state-specific IGRS scraper identified in Step 0 (State Routing).** Do not default to Maharashtra.
 
-1. Search by project name / society name in the relevant district and sub-registrar office
-2. Look for registrations in the last 12 months (prioritize recent)
-3. Extract from each registration:
-   - Registration date
-   - Document type (sale deed, agreement to sell)
-   - Consideration amount (sale price)
-   - Unit details (flat number, floor, area if available)
-   - Stamp duty paid
-4. Calculate price per sqft from each registration
+**Maharashtra:**
+```bash
+node scripts/igrs-scraper.mjs search --district "Pune" --village "Hinjewadi" --year 2025
+```
 
-If IGRS portal search fails or returns no results, note this clearly and proceed to Step 2.
+**Karnataka (Bangalore market):**
+```bash
+# Check session first
+node scripts/scrapers/kaveri-karnataka.mjs session-status
+
+# If expired, prompt user to log in:
+# node scripts/scrapers/kaveri-karnataka.mjs login
+
+# Then search
+node scripts/scrapers/kaveri-karnataka.mjs ec --district "Bangalore Urban" --taluk "Bangalore South" --village "Uttarahalli"
+```
+
+**Telangana (Hyderabad market):**
+```bash
+node scripts/scrapers/igrs-telangana.mjs ec --district "Hyderabad" --mandal "Serilingampally" --village "Gachibowli"
+```
+
+**Other states (no scraper yet):**
+Fall back to WebSearch with clear labeling. Never present WebSearch results as registration data.
+
+For each registration returned, extract:
+- Registration date
+- Document type (sale deed, agreement to sell)
+- Consideration amount (sale price)
+- Unit details (flat number, floor, area if available)
+- Stamp duty paid
+
+Calculate price per sqft from each registration.
+
+If IGRS portal search fails or returns no results, note this clearly and proceed to Step 2. **Include the failure mode in the report** (CAPTCHA failed? Session expired? No data?) so the user knows what to retry.
 
 ### Step 2: Area-Level Registration Data
 
@@ -178,26 +234,71 @@ Calculate and present:
 
 **Purpose:** Assess the trustworthiness and track record of the builder/developer.
 
-### Step 1: RERA Portal Research
+### Step 1: Promoter Identity Resolution (CRITICAL)
 
-Search MahaRERA (or relevant state RERA) for the builder/promoter:
+Before searching RERA, resolve the builder's full identity across related legal entities. This addresses the common problem of "previous projects field is empty" in RERA listings.
 
-1. List all registered projects by this promoter
-2. For each project, note: status (ongoing/completed), registration date, completion date, any extensions
-3. Count: total projects, completed on time, completed late, ongoing, delayed beyond RERA date
-4. Check RERA complaint section for complaints against this promoter
-5. Categorize complaints: delay, quality, refund, non-compliance, other
+```bash
+node scripts/promoter-resolver.mjs resolve --name "{builder name}"
+```
 
-### Step 2: eCourts Litigation Check
+The resolver cross-references cached RERA data by company name (normalized), phone numbers, email domains, registered addresses, and director names. It returns all related legal entities and aggregated projects.
 
-Search ecourts.gov.in for cases involving the builder:
+If the resolver finds related entities, use ALL of them in Step 2 searches, not just the one the user provided.
 
-1. Search by builder/promoter company name
-2. Search by key directors/partners if known
-3. Note: case type (civil, criminal, consumer, NCLT), status (pending/disposed), nature of dispute
-4. Prioritize: consumer complaints, NCLT proceedings, criminal cases
+### Step 2: RERA Portal Research (state-specific)
 
-### Step 3: WebSearch Reputation
+**Use the state-specific RERA scraper identified in Step 0.** Do not default to Maharashtra.
+
+**Maharashtra:**
+```bash
+node scripts/maharera-scraper.mjs builder --name "{builder name}"
+```
+
+**Karnataka (Bangalore):**
+```bash
+node scripts/scrapers/krera-karnataka.mjs builder --name "{builder name}"
+```
+
+**Telangana (Hyderabad):**
+```bash
+node scripts/scrapers/tsrera.mjs builder --name "{builder name}"
+```
+
+**Tamil Nadu (Chennai):**
+```bash
+node scripts/scrapers/tnrera.mjs builder --name "{builder name}"
+```
+
+**Uttar Pradesh (Noida/Greater Noida/Ghaziabad):**
+```bash
+node scripts/scrapers/uprera.mjs builder --name "{builder name}"
+```
+
+**National aggregate (any state, MoHUA):**
+```bash
+node scripts/scrapers/rera-national.mjs search --promoter "{builder name}"
+```
+
+For each project returned, extract:
+- Status (ongoing/completed), registration date, completion date, any extensions
+- Count: total projects, completed on time, completed late, ongoing, delayed beyond RERA date
+
+Check RERA complaint section for complaints against this promoter. Categorize: delay, quality, refund, non-compliance, other.
+
+### Step 3: eCourts Litigation Check (works for ALL states via national API)
+
+```bash
+node scripts/ecourts-search.mjs party-name --name "{builder name}" --state "{state code}"
+```
+
+State codes: MH (Maharashtra), KA (Karnataka), TG (Telangana), TN (Tamil Nadu), UP (Uttar Pradesh), DL (Delhi), etc.
+
+The eCourts scraper uses the Kleopatra API as primary (free, fast) with Playwright fallback. No per-state routing needed — it works nationally.
+
+Note: case type (civil, criminal, consumer, NCLT), status (pending/disposed), nature of dispute. Prioritize: consumer complaints, NCLT proceedings, criminal cases.
+
+### Step 4: WebSearch Reputation
 
 Search the web for:
 - "{builder name} reviews"
@@ -208,7 +309,7 @@ Search the web for:
 
 Extract: customer reviews, news coverage (positive and negative), industry reputation.
 
-### Step 4: Calculate Builder Score
+### Step 5: Calculate Builder Score
 
 ```
 ## C. Builder Reputation

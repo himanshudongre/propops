@@ -111,25 +111,51 @@ Note: All prices are LISTING prices (asking), not verified registration prices.
 
 ---
 
-## Level 2 — RERA Portal Scan
+## Level 2 — RERA Portal Scan (state-specific routing)
 
-**Source:** MahaRERA (or relevant state RERA portal)
+**Source:** State-specific RERA scraper (determined by State Routing Protocol in `_shared.md`)
 **Trust level:** High
-**Purpose:** Find RERA-registered projects, including new registrations not yet on portals
+**Purpose:** Find RERA-registered projects, including new registrations not yet on property portals
 
 ### Search Strategy
 
-Search the RERA portal for:
+**First, determine the state** from the buyer brief (target locations) or user input. Then run the appropriate RERA scraper:
+
+**Maharashtra:**
+```bash
+node scripts/maharera-scraper.mjs search-project --district "{district}" --name "{query}"
+```
+
+**Karnataka:**
+```bash
+node scripts/scrapers/krera-karnataka.mjs list --district "{district}"
+```
+
+**Telangana:**
+```bash
+node scripts/scrapers/tsrera.mjs list --district "{district}"
+```
+
+**Tamil Nadu:**
+```bash
+node scripts/scrapers/tnrera.mjs list --year {year}
+```
+
+**Uttar Pradesh (Noida/Ghaziabad):**
+```bash
+node scripts/scrapers/uprera.mjs list --district "Gautam Budh Nagar"
+```
+
+**For national-level discovery across multiple states:**
+```bash
+node scripts/scrapers/rera-national.mjs tracker
+```
+
+Search each RERA portal for:
 
 1. **New project registrations** in target areas (registered in last 6 months)
 2. **Ongoing projects** in target areas matching configuration
 3. **Projects by specific builders** if user has preferences
-
-For MahaRERA:
-- Navigate to project search
-- Filter by district, taluka/city
-- Filter by project status (ongoing)
-- Extract results
 
 ### Data to Extract Per Project
 

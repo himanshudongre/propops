@@ -216,6 +216,101 @@ Appreciation: 12% over 3 years (WebSearch estimate — verify with IGRS)
 
 ---
 
+## State Routing Protocol (CRITICAL)
+
+**Every mode that queries state-specific data MUST use this protocol.** Never hardcode Maharashtra assumptions — PropOps supports multiple states.
+
+### Step 1: Detect the State
+
+Determine the property's state from these signals (in order of preference):
+
+1. **Explicit user input** — if the user says "Bangalore" or "Hyderabad", use that
+2. **Buyer brief** (`buyer-brief.md`) — check the Target Locations section
+3. **Listing URL** — extract state from URL patterns (e.g., `pune.99acres.com` → Maharashtra)
+4. **Property address** — parse the address for city/state names
+5. **Builder's registered office** — if all else fails, use the builder's registered state
+
+If the state cannot be determined, ASK the user before running queries.
+
+### Step 2: Look Up State Config
+
+Before running any IGRS/RERA scraper, consult the state registry:
+
+```bash
+node scripts/scrapers/state-registry.mjs get {state-name-or-city}
+```
+
+This returns:
+- Whether IGRS and RERA are supported for this state
+- Which scraper file to use (`kaveri-karnataka.mjs`, `igrs-telangana.mjs`, etc.)
+- Difficulty rating and any auth requirements (CAPTCHA, OTP login)
+- Portal URLs and search parameters
+
+### Step 3: Run the Right Scraper
+
+Based on the state, call the correct scraper:
+
+**For IGRS (registration prices):**
+
+| State | Scraper | Auth |
+|-------|---------|------|
+| Maharashtra (Mumbai, Pune, Thane) | `node scripts/igrs-scraper.mjs` | CAPTCHA in chat |
+| Karnataka (Bangalore) | `node scripts/scrapers/kaveri-karnataka.mjs ec` | OTP login (one-time) |
+| Telangana (Hyderabad) | `node scripts/scrapers/igrs-telangana.mjs ec` | CAPTCHA in chat |
+| Other states | Not yet supported — fall back to WebSearch with clear labeling |
+
+**For RERA (builder/project data):**
+
+| State | Scraper | Notes |
+|-------|---------|-------|
+| Maharashtra | `node scripts/maharera-scraper.mjs` | Primary source |
+| Karnataka | `node scripts/scrapers/krera-karnataka.mjs` | Bangalore market |
+| Telangana | `node scripts/scrapers/tsrera.mjs` | Hyderabad metro |
+| Tamil Nadu | `node scripts/scrapers/tnrera.mjs` | Chennai, easiest |
+| Uttar Pradesh | `node scripts/scrapers/uprera.mjs` | Noida/Greater Noida/Ghaziabad |
+| Any state | `node scripts/scrapers/rera-national.mjs` | MoHUA unified (national) |
+
+**For litigation (eCourts, always available):**
+
+```bash
+node scripts/ecourts-search.mjs party-name --name "Builder Name" --state "MH"
+```
+
+eCourts via the Kleopatra API works for ALL states. No per-state routing needed.
+
+### Step 4: Handle Unsupported States Gracefully
+
+If a state has no dedicated scraper yet:
+
+1. **Announce the limitation** to the user: "I don't have a dedicated scraper for [state] yet. I'll use WebSearch instead, but the data quality will be lower."
+2. **Use WebSearch** for fallback data — registration price estimates, builder news, RERA info
+3. **Label everything clearly** as "estimated" or "unverified"
+4. **Never fabricate data** to compensate for missing sources
+
+### Step 5: Cross-State Queries
+
+If the user is in one state but asking about a property in another (e.g., lives in Mumbai but considering a flat in Bangalore):
+
+1. Use the scrapers for the PROPERTY'S state, not the buyer's state
+2. Surface any state-specific concerns (e.g., "Karnataka stamp duty is X%, different from Maharashtra's Y%")
+3. Note any legal differences (RERA delay penalty rates, OC requirements, etc.)
+
+### Example Flow
+
+User says: "I'm looking at Prestige Falcon City in Bangalore. Can you evaluate it?"
+
+1. **Detect state:** "Bangalore" → Karnataka
+2. **Look up config:** `state-registry get Bangalore` → Karnataka Kaveri (IGRS, OTP login) + K-RERA (public)
+3. **Check Kaveri session:** `kaveri-karnataka.mjs session-status` → if expired, prompt user to log in
+4. **Run RERA:** `krera-karnataka.mjs search --project "Prestige Falcon City"` → get RERA data
+5. **Run litigation:** `ecourts-search.mjs party-name --name "Prestige Group" --state "KA"` → via API
+6. **Run IGRS (if session valid):** `kaveri-karnataka.mjs ec --district "Bangalore Urban" --taluk "Bangalore South" --village "Uttarahalli"` → actual prices
+7. **Aggregate + evaluate** using 7-block system
+
+**NEVER skip state detection.** Defaulting to Maharashtra scrapers for a Bangalore property would produce garbage data.
+
+---
+
 ## Global Rules
 
 ### NEVER
