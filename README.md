@@ -53,13 +53,13 @@ PropOps covers the **entire property buying lifecycle** — from discovery to po
 
 ### Builder Identity Resolution
 
-A common critique of naive builder evaluation: the RERA "previous projects" field is often blank, so you'd evaluate Project C without knowing Project A by the same builder was a disaster. PropOps addresses this head-on with a fuzzy identity resolver.
+A common critique of naive builder evaluation (raised by a Reddit user during PropOps's launch): the RERA "previous projects" field is often blank, so you'd evaluate Project C without knowing Project A by the same builder was a disaster. Builders also operate through multiple SPV entities with slightly different names ("Macrotech Developers Ltd" vs "Macrotech Developers Private Limited"). PropOps addresses this head-on with a fuzzy identity resolver that cross-references 5 signals.
 
 | Feature | Description |
 |---------|-------------|
-| **Promoter Resolver** | Cross-references builder identity across legal entities using company name, directors, phones, email domains, and registered addresses. More robust than trusting RERA form fields. |
-| **Entity Graph** | Visualizes all related legal entities and projects for a builder. Catches SPV structures most buyers never notice. |
-| **Transparency** | Every report shows known limitations upfront. RERA data is a disclosure signal, not a quality guarantee — PropOps says so explicitly. |
+| **Promoter Resolver** | Fuzzy matches across company name (35% weight), phones (20%), email domain (15%), registered address + PIN (15%), and director names (15%). Verdict: very_likely_same / likely_same / possibly_related. |
+| **Entity Aggregation** | For "Sobha Limited" the resolver catches 4 variants — `SOBHA LIMITED`, `Sobha Limited`, `Sobha Limited ` (trailing space), `SOBHA LTD.` — and aggregates all 119 unique projects across them. |
+| **Transparency Disclosures** | Every builder report shows known limitations upfront (`modes/builder.md` "CRITICAL: Known Limitations" section): RERA fields may be empty, linkage is fuzzy, court data has lag, RERA is disclosure not enforcement. |
 
 ### Post-Purchase Protection
 
@@ -132,6 +132,32 @@ claude
 
 Or just paste a property URL or listing -- PropOps auto-detects it and runs the full pipeline.
 
+### End-to-End Builder Report (CLI)
+
+For a complete, automated builder evaluation across all configured state scrapers, the promoter resolver, and eCourts litigation search:
+
+```bash
+node scripts/builder-report.mjs --name "Sobha Limited" --output reports/sobha.md
+```
+
+This runs **the full pipeline** in sequence:
+
+1. Queries MahaRERA, K-RERA, TNRERA (TG-RERA and UP-RERA opt-in)
+2. Runs the promoter resolver across all cached data to find related legal entities
+3. Searches eCourts via Kleopatra API for litigation (national coverage)
+4. Aggregates everything into a markdown report with verdict + red/green flags
+
+Example output for "Sobha Limited" (128 seconds):
+
+```
+State-by-State Presence:  Karnataka: 1,150 projects | Maharashtra: 0 | Tamil Nadu: 0
+Promoter Resolver:         4 legal entity variants, 119 unique projects
+eCourts Litigation:        0 cases (clean record)
+Verdict:                   STRONG POSITIVE — Established builder with clean record
+```
+
+The promoter resolver caught 4 variants: `SOBHA LIMITED`, `Sobha Limited`, `Sobha Limited ` (trailing space), `SOBHA LTD.` — exactly the kind of entity-linkage gap that naive RERA evaluation misses.
+
 ## How It Works
 
 ```
@@ -155,13 +181,15 @@ Or just paste a property URL or listing -- PropOps auto-detects it and runs the 
   | (prices) |   | (builder)|   |(litigation)|     | Portals   |
   +----+-----+   +----+-----+   +----+-----+       +-----+-----+
        |              |              |                    |
-  Per-state:     Per-state:    National API         WebSearch:
+  Dedicated:     Dedicated:    National API         WebSearch:
   - Maharashtra  - MahaRERA    - Kleopatra          - 99acres
-  - Kaveri (KA)  - K-RERA      - Playwright         - MagicBricks
-  - Telangana    - TG-RERA       fallback           - Housing.com
-  - (more)       - TNRERA
-                 - UP-RERA
-                 + MoHUA unified portal
+  - Kaveri (KA)  - K-RERA        (primary)          - MagicBricks
+  - Telangana    - TG-RERA     - Playwright         - Housing.com
+                 - TNRERA        fallback
+                 - UP-RERA     Works for ALL
+  Generic:       + MoHUA       700+ Indian
+  - 26 states    national      courts
+    (bootstrap)  aggregator
                        |
           +------------v------------+
           |  Promoter Resolver      |  Fuzzy match across legal
@@ -273,21 +301,24 @@ propops/
 |   +-- batch.md              # Parallel evaluation
 +-- scripts/                        # Utility scripts + scrapers
 |   +-- igrs-scraper.mjs            # IGRS Maharashtra (CAPTCHA-aware)
-|   +-- maharera-scraper.mjs        # MahaRERA builder/project data
-|   +-- ecourts-search.mjs          # Litigation search (API + Playwright)
+|   +-- maharera-scraper.mjs        # MahaRERA builder/project data (card layout parser)
+|   +-- ecourts-search.mjs          # Litigation search (Kleopatra API + Playwright fallback)
+|   +-- builder-report.mjs          # End-to-end builder evaluation pipeline
 |   +-- telegram-bot.mjs            # Telegram notifications
 |   +-- forecast-engine.mjs         # Price trend analysis
 |   +-- merge-tracker.mjs           # Tracker merge + dedup
 |   +-- verify-pipeline.mjs         # Data health check
-|   +-- promoter-resolver.mjs       # Fuzzy builder identity resolution
+|   +-- promoter-resolver.mjs       # Fuzzy builder identity resolution across legal entities
 |   +-- scrapers/
 |       +-- state-registry.mjs      # Central config for all Indian state portals
-|       +-- rera-national.mjs       # MoHUA unified RERA portal (35 states)
-|       +-- kaveri-karnataka.mjs    # Karnataka IGRS (OTP login)
-|       +-- krera-karnataka.mjs     # Karnataka RERA
+|       +-- debug-helper.mjs        # Shared debug snapshot + page inspection utilities
+|       +-- generic-rera.mjs        # Bootstrap scraper for 26 states (4 extraction strategies)
+|       +-- rera-national.mjs       # MoHUA unified RERA portal (35 states aggregator)
+|       +-- kaveri-karnataka.mjs    # Karnataka IGRS (OTP login, session handoff)
+|       +-- krera-karnataka.mjs     # Karnataka RERA (JS array extraction, 9,530 projects)
 |       +-- igrs-telangana.mjs      # Telangana IGRS (CAPTCHA-aware)
-|       +-- tsrera.mjs              # Telangana RERA
-|       +-- tnrera.mjs              # Tamil Nadu RERA (easiest, static PHP)
+|       +-- tsrera.mjs              # Telangana RERA (Advanced Search + CAPTCHA)
+|       +-- tnrera.mjs              # Tamil Nadu RERA (static PHP, easiest)
 |       +-- uprera.mjs              # UP-RERA (Noida/Greater Noida/Ghaziabad)
 +-- data/                     # Tracker, cache, history (gitignored)
 +-- reports/                  # Generated evaluation reports (gitignored)
@@ -317,24 +348,49 @@ Run /propops evaluate for full report
 
 ## Currently Supported
 
-### State-by-State Support
+### Dedicated Scrapers (Production-Quality)
 
 | State | IGRS (Actual Prices) | RERA | eCourts | Status |
 |-------|---------------------|------|---------|--------|
-| **Maharashtra** (Mumbai, Pune, Thane) | ✅ Full | ✅ Full | ✅ Full | ✅ Production |
-| **Karnataka** (Bangalore) | ✅ Full (Kaveri) | ✅ Full | ✅ Via API | ✅ Production |
-| **Telangana** (Hyderabad) | ✅ **Full** | ✅ **Full** | ✅ Via API | ✅ **Production** |
-| **Uttar Pradesh** (Noida, Greater Noida, Ghaziabad) | Planned | ✅ **Full** | ✅ Via API | 🚧 **RERA live** |
-| **Tamil Nadu** (Chennai) | Planned | ✅ Full | ✅ Via API | 🚧 RERA live |
-| **Delhi NCR** (Delhi, Gurgaon) | Planned | Planned | ✅ Via API | 📋 Roadmap |
+| **Maharashtra** (Mumbai, Pune, Thane) | ✅ Full | ✅ Full (card layout parser) | ✅ Full | ✅ Production |
+| **Karnataka** (Bangalore) | ✅ Full (Kaveri OTP) | ✅ Full (9,530 projects) | ✅ Via API | ✅ Production |
+| **Telangana** (Hyderabad) | ✅ Full (CAPTCHA) | ✅ Full (Advanced Search + CAPTCHA) | ✅ Via API | ✅ Production |
+| **Tamil Nadu** (Chennai) | Planned | ✅ Full (static PHP) | ✅ Via API | 🚧 RERA live |
+| **Uttar Pradesh** (Noida, Greater Noida, Ghaziabad) | Planned | ✅ Full | ✅ Via API | 🚧 RERA live |
 
-**Plus: Unified National RERA Portal** (`rera.mohua.gov.in`) — launched September 2025 by MoHUA. Aggregates 35 states/UTs with 151,113+ projects, 106,545+ agents, 147,383+ disposed complaints. PropOps has a scraper for this (`rera-national.mjs`).
+### Bootstrap Scraper (Best-Effort, 26 States)
 
-**eCourts litigation search works nationally** via the Kleopatra API wrapper (with Playwright fallback) — all states covered for legal case lookups. IGRS portals are state-specific.
+For states without dedicated scrapers, the **generic RERA bootstrap** (`scripts/scrapers/generic-rera.mjs`) uses MoHUA's official state-URL list and tries four extraction strategies: MahaRERA card layout, K-RERA JS arrays, HTML tables, Drupal Views rows.
 
-Karnataka Kaveri and IGRS Telangana use human-in-the-loop authentication — you solve the CAPTCHA (or log in manually once for Kaveri), and the agent handles the rest. Aggressive caching minimizes friction.
+Covered states: **Andhra Pradesh, Assam, Bihar, Chhattisgarh, Delhi, Goa, Gujarat, Haryana, Himachal Pradesh, Jammu & Kashmir, Jharkhand, Kerala, Madhya Pradesh, Meghalaya, Odisha, Puducherry, Punjab, Rajasthan, Tripura, Uttarakhand, West Bengal** + the 5 with dedicated scrapers.
 
-The state registry (`scripts/scrapers/state-registry.mjs`) defines all configurations. Adding a new state is as simple as writing one scraper file matching the base interface.
+```bash
+node scripts/scrapers/generic-rera.mjs search --state "Gujarat" --name "Godrej"
+node scripts/scrapers/generic-rera.mjs explore --state "Rajasthan"
+node scripts/scrapers/generic-rera.mjs list-supported
+```
+
+Bootstrap is best-effort — for SPA portals it auto-saves a debug snapshot so you can build a dedicated scraper later.
+
+### National Aggregator
+
+**Unified National RERA Portal** (`rera.mohua.gov.in`) — launched September 2025 by MoHUA. Aggregates 35 states/UTs with 151,113+ projects, 106,545+ agents, 147,383+ disposed complaints. PropOps has a scraper for this (`scripts/scrapers/rera-national.mjs`) that captures weekly tracker data and the authoritative state portal URL list.
+
+### Litigation (All States)
+
+**eCourts** via the Kleopatra API wrapper (with Playwright fallback) covers all 700+ district courts, High Courts, NCLT, and Consumer Forum nationally. No per-state setup needed.
+
+### Authentication Patterns
+
+Different portals need different auth strategies — PropOps handles each with human-in-the-loop flows:
+
+- **Kaveri Karnataka**: One-time phone + OTP login. Session cookies saved for 8 hours in `data/kaveri-session.json`.
+- **IGRS Maharashtra, IGRS Telangana, TG-RERA**: Image CAPTCHA per search. Scraper screenshots the CAPTCHA, user types the solution, scraper re-runs with `--captcha` flag.
+- **MahaRERA, K-RERA, TNRERA, UP-RERA**: No auth required.
+
+### Adding a New State
+
+The state registry (`scripts/scrapers/state-registry.mjs`) defines all configurations. For any unsupported state, try the generic bootstrap first. When you're ready to write a dedicated scraper, follow the pattern of the existing ones — each handles a different portal architecture (card layout, JS arrays, static HTML, ASP.NET forms).
 
 ### Contributing a New State
 
@@ -344,11 +400,13 @@ The highest-impact contribution to PropOps is adding IGRS/RERA scraper support f
 
 | Component | Technology |
 |-----------|-----------|
-| Agent | Claude Code with 19 custom modes |
-| Scraping | Playwright (IGRS, RERA portals across 5 states, property portals) |
+| Agent | Claude Code with 19 custom modes and `State Routing Protocol` |
+| Scraping | Playwright with 10 dedicated scrapers (5 states) + generic bootstrap for 26 states |
 | State Routing | `state-registry.mjs` — central config mapping cities/states to scrapers |
-| Builder Linkage | `promoter-resolver.mjs` — fuzzy identity resolution across legal entities |
-| Litigation | eCourts API (Kleopatra, free tier) + Playwright fallback |
+| Builder Linkage | `promoter-resolver.mjs` — fuzzy identity resolution (5 signals, 4-way verdict) |
+| End-to-End Pipeline | `builder-report.mjs` — runs state scrapers + resolver + eCourts in one command |
+| Litigation | eCourts API (Kleopatra, free tier) + Playwright fallback — national coverage |
+| Debug Tooling | `debug-helper.mjs` — auto HTML snapshots + page structure inspection on failures |
 | Market Data | WebSearch + WebFetch for trends, rates, news |
 | Alerts | Telegram Bot API |
 | Data | Markdown tables + YAML config + TSV batch |
