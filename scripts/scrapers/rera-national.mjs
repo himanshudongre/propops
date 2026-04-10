@@ -42,9 +42,27 @@ const CACHE_VALIDITY_DAYS = 30;
 const RERA_NATIONAL = {
   base: 'https://www.rera.mohua.gov.in',
   home: 'https://www.rera.mohua.gov.in/',
-  // These paths need to be discovered via "explore" command
-  search: 'https://www.rera.mohua.gov.in/projects',
-  stats: 'https://www.rera.mohua.gov.in/stats'
+
+  // Discovered endpoints (research 2026-04-10)
+  key_features: 'https://rera.mohua.gov.in/key-features-of-RERA.html',
+  rera_act: 'https://rera.mohua.gov.in/real-estate-regulation-and-development-act-2016.html',
+  tracker: 'https://rera.mohua.gov.in/tracker.html',
+  implementation_status: 'https://mohua.gov.in/cms/implementation-status.php',
+  state_rera_list: 'https://mohua.gov.in/cms/rera.php',
+
+  // Weekly tracker PDF (updated regularly)
+  tracker_pdf: 'https://mohua.gov.in/upload/uploadfiles/files/RERA-Status-Tracker-08-04-2024.pdf',
+
+  // IMPORTANT FINDING: The portal is mostly static HTML pages.
+  // It doesn't have a true search JSON API. It aggregates stats and
+  // REDIRECTS users to individual state RERA portals for project-level searches.
+  //
+  // This means for actual project searches, you still need state-specific scrapers.
+  // The MoHUA portal is best used for:
+  // - National-level statistics (total projects, agents, states)
+  // - Weekly tracker updates
+  // - Implementation status by state
+  // - Finding links to each state's RERA portal
 };
 
 // ─── Cache ──────────────────────────────────────────────────
@@ -320,6 +338,147 @@ async function searchProjects(options = {}) {
   }
 }
 
+// ─── Get Tracker Data (Weekly MoHUA Report) ───────────────
+
+async function getTrackerData() {
+  const cached = readCache('tracker', 'national');
+  if (cached) return cached;
+
+  const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
+  const page = await browser.newPage();
+
+  try {
+    console.error(`Fetching MoHUA RERA tracker...`);
+    await page.goto(RERA_NATIONAL.tracker, { waitUntil: 'networkidle', timeout: 30000 });
+    await page.waitForTimeout(3000);
+
+    // Extract all state-level statistics from the tracker page
+    const trackerData = await page.evaluate(() => {
+      const data = {
+        states: {},
+        totals: {},
+        updated_date: ''
+      };
+
+      // Look for tables with state-wise data
+      const tables = document.querySelectorAll('table');
+      for (const table of tables) {
+        const rows = table.querySelectorAll('tr');
+        if (rows.length < 2) continue;
+
+        const headers = Array.from(rows[0].querySelectorAll('th, td'))
+          .map(c => c.textContent?.trim() || '');
+
+        // Check if this is a state-wise table
+        const hasState = headers.some(h => /state|ut|region/i.test(h));
+        if (!hasState) continue;
+
+        for (let i = 1; i < rows.length; i++) {
+          const cells = Array.from(rows[i].querySelectorAll('td'));
+          if (cells.length < 2) continue;
+
+          const stateName = cells[0]?.textContent?.trim() || '';
+          if (!stateName || stateName.length > 50) continue;
+
+          const entry = {};
+          cells.forEach((cell, idx) => {
+            const header = headers[idx] || `col_${idx}`;
+            entry[header] = cell.textContent?.trim() || '';
+          });
+
+          data.states[stateName] = entry;
+        }
+      }
+
+      // Look for total counts in text
+      const text = document.body.textContent || '';
+      const totalProjects = text.match(/([\d,]+)\s*(?:registered\s*)?projects/i)?.[1];
+      const totalAgents = text.match(/([\d,]+)\s*(?:registered\s*)?agents/i)?.[1];
+      const totalComplaints = text.match(/([\d,]+)\s*complaints/i)?.[1];
+      const updatedDate = text.match(/(updated|as of|last updated)[:\s]*([\w\s\d,]+)/i)?.[2];
+
+      data.totals = {
+        total_projects: totalProjects ? parseInt(totalProjects.replace(/,/g, '')) : null,
+        total_agents: totalAgents ? parseInt(totalAgents.replace(/,/g, '')) : null,
+        total_complaints: totalComplaints ? parseInt(totalComplaints.replace(/,/g, '')) : null
+      };
+      data.updated_date = updatedDate?.trim() || '';
+
+      return data;
+    });
+
+    const output = {
+      source: 'MoHUA Unified RERA Portal — Tracker',
+      source_url: RERA_NATIONAL.tracker,
+      scraped_at: new Date().toISOString(),
+      ...trackerData,
+      states_covered: Object.keys(trackerData.states).length
+    };
+
+    writeCache('tracker', 'national', output);
+    return output;
+
+  } catch (error) {
+    return {
+      source: 'MoHUA Unified RERA Portal — Tracker',
+      error: error.message
+    };
+  } finally {
+    await browser.close();
+  }
+}
+
+// ─── Get State Portal Links ────────────────────────────────
+
+async function getStatePortalLinks() {
+  const cached = readCache('state-links', 'all');
+  if (cached) return cached;
+
+  const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
+  const page = await browser.newPage();
+
+  try {
+    console.error(`Fetching state RERA portal links...`);
+    await page.goto(RERA_NATIONAL.state_rera_list, { waitUntil: 'networkidle', timeout: 30000 });
+    await page.waitForTimeout(2000);
+
+    const links = await page.evaluate(() => {
+      const allLinks = Array.from(document.querySelectorAll('a'));
+      return allLinks
+        .map(a => ({
+          text: a.textContent?.trim() || '',
+          href: a.href
+        }))
+        .filter(l =>
+          l.href &&
+          (l.href.includes('rera') || /\b(state|ut|portal)\b/i.test(l.text)) &&
+          !l.href.startsWith('mailto:') &&
+          !l.href.startsWith('tel:')
+        )
+        .slice(0, 100);
+    });
+
+    const output = {
+      source: 'MoHUA Implementation Status',
+      source_url: RERA_NATIONAL.state_rera_list,
+      scraped_at: new Date().toISOString(),
+      count: links.length,
+      state_portal_links: links
+    };
+
+    writeCache('state-links', 'all', output);
+    return output;
+
+  } catch (error) {
+    return {
+      source: 'MoHUA Implementation Status',
+      error: error.message
+    };
+  } finally {
+    await browser.close();
+  }
+}
+
 // ─── Get National Stats ────────────────────────────────────
 
 async function getStats() {
@@ -395,6 +554,12 @@ Usage:
   node scripts/scrapers/rera-national.mjs stats
     Get national-level statistics
 
+  node scripts/scrapers/rera-national.mjs tracker
+    Get weekly MoHUA RERA tracker data (state-wise projects, agents, complaints)
+
+  node scripts/scrapers/rera-national.mjs state-links
+    Get links to all individual state RERA portals from MoHUA implementation page
+
 Options:
   --project      Project name to search
   --promoter     Promoter/builder name
@@ -429,6 +594,14 @@ state-specific RERA scrapers with one national portal.
 
     case 'stats':
       result = await getStats();
+      break;
+
+    case 'tracker':
+      result = await getTrackerData();
+      break;
+
+    case 'state-links':
+      result = await getStatePortalLinks();
       break;
 
     default:

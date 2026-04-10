@@ -254,13 +254,15 @@ Run /propops evaluate for full report
 | State | IGRS (Actual Prices) | RERA | eCourts | Status |
 |-------|---------------------|------|---------|--------|
 | **Maharashtra** (Mumbai, Pune, Thane) | ✅ Full | ✅ Full | ✅ Full | ✅ Production |
-| **Karnataka** (Bangalore) | ✅ Full (Kaveri) | ✅ Full | ✅ Via API | ✅ **Production** |
+| **Karnataka** (Bangalore) | ✅ Full (Kaveri) | ✅ Full | ✅ Via API | ✅ Production |
+| **Telangana** (Hyderabad) | ✅ **Full** | ✅ **Full** | ✅ Via API | ✅ **Production** |
+| **Uttar Pradesh** (Noida, Greater Noida, Ghaziabad) | Planned | ✅ **Full** | ✅ Via API | 🚧 **RERA live** |
 | **Tamil Nadu** (Chennai) | Planned | ✅ Full | ✅ Via API | 🚧 RERA live |
-| **Telangana** (Hyderabad) | Planned | Planned | ✅ Via API | 📋 Roadmap |
-| **Delhi NCR** (Delhi, Gurgaon, Noida) | Planned | Planned | ✅ Via API | 📋 Roadmap |
-| **Uttar Pradesh** (Noida/Greater Noida) | Planned | Planned | ✅ Via API | 📋 Roadmap |
+| **Delhi NCR** (Delhi, Gurgaon) | Planned | Planned | ✅ Via API | 📋 Roadmap |
 
-Karnataka Kaveri uses human-in-the-loop session handoff — you log in manually once (phone + OTP + CAPTCHA), and the session is reused for 8 hours. Aggressive caching minimizes re-login friction.
+**Plus: Unified National RERA Portal** (`rera.mohua.gov.in`) — launched Sept 2025 by MoHUA, aggregates 35 states/UTs with 151,113+ projects. PropOps has a scraper for this too.
+
+Karnataka Kaveri and IGRS Telangana use human-in-the-loop authentication — you solve the CAPTCHA (or log in manually once for Kaveri), and the agent handles the rest. Aggressive caching minimizes friction.
 
 **Plus: Unified National RERA Portal** (`rera.mohua.gov.in`) — launched Sept 2025 by MoHUA, covers 35 states/UTs with 151,113+ projects. PropOps has a scraper for this as well (`rera-national.mjs`).
 

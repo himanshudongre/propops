@@ -147,7 +147,7 @@ export const STATES = {
     major_cities: ['Hyderabad', 'Warangal', 'Nizamabad', 'Karimnagar'],
 
     igrs: {
-      enabled: false,
+      enabled: true,
       primary_url: 'https://registration.telangana.gov.in/',
       alt_url: 'https://prereg.telangana.gov.in/',
       tech: 'Classic ASP/JSP NIC stack',
@@ -159,11 +159,11 @@ export const STATES = {
       scraper: 'igrs-telangana.mjs',
       search_params: ['district', 'mandal', 'village', 'survey_no', 'plot_no', 'sro', 'year', 'document_number'],
       features: ['EC search', 'Market value search (land vs apartment)', 'Deed details'],
-      notes: 'One of the most comprehensive historical datasets (1983+). Public-facing search doesnt always require login. Landeed covers it commercially.'
+      notes: 'One of the most comprehensive historical datasets (1983+). Human-in-the-loop CAPTCHA. Covers all 33 districts including Hyderabad metro.'
     },
 
     rera: {
-      enabled: false,
+      enabled: true,
       primary_url: 'https://rera.telangana.gov.in/',
       search_url: 'https://rerait.telangana.gov.in/SearchList/Search',
       tech: 'ASP.NET MVC',
@@ -173,7 +173,7 @@ export const STATES = {
       scraper: 'tsrera.mjs',
       search_params: ['project_name', 'promoter_name', 'registration_number'],
       features: ['Project search', 'Agent registration search', 'Quarterly progress reports'],
-      notes: 'Public search works without login. ASP.NET ViewState handling needed.'
+      notes: 'Public search works without login. Covers Hyderabad metro + all Telangana.'
     }
   },
 
@@ -265,7 +265,7 @@ export const STATES = {
     },
 
     rera: {
-      enabled: false,
+      enabled: true,
       primary_url: 'https://www.up-rera.in/',
       legacy_url: 'https://uprera.azurewebsites.net/View_projects.aspx',
       tech: 'ASP.NET WebForms on Azure',
@@ -273,7 +273,8 @@ export const STATES = {
       difficulty: 'LOW-MEDIUM',
       scraper: 'uprera.mjs',
       search_params: ['project_name', 'promoter_name', 'district', 'registration_number'],
-      notes: 'Noida alone has 69 projects / 37,199 units. Legacy portal still works. ASP.NET ViewState handling needed via Scrapy FormRequest pattern.'
+      ncr_districts: ['Gautam Budh Nagar', 'Ghaziabad', 'Meerut', 'Bulandshahr', 'Hapur'],
+      notes: 'Noida alone has 69+ projects / 37,199+ units. Gautam Budh Nagar district covers both Noida and Greater Noida. Biggest NCR market.'
     }
   },
 
