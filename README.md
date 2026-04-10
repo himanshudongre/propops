@@ -27,18 +27,47 @@ PropOps makes it searchable, scored, and actionable.
 
 ## What It Does
 
+PropOps covers the **entire property buying lifecycle** — from discovery to post-purchase enforcement of your rights.
+
+### Discovery & Evaluation
+
 | Feature | Description |
 |---------|-------------|
 | **Price Intelligence** | Pulls actual registration prices from IGRS. Shows what people REALLY paid vs what the builder quotes you. |
 | **Builder Score** | Aggregates RERA compliance, delivery history, complaints, and litigation into a single score out of 10. |
-| **Risk Assessment** | Red flags and green flags with data sources cited. Active litigation, delayed projects, missing RERA -- all surfaced. |
+| **Risk Assessment** | Red flags and green flags with data sources cited. Active litigation, delayed projects, missing RERA — all surfaced. |
 | **AI Evaluation** | 7-block deep analysis: property summary, price intelligence, builder reputation, risks, location, recommendations, negotiation strategy. |
-| **Negotiation Intel** | Data-backed suggested offer price, negotiation scripts, hidden cost checklist, walk-away price. |
 | **Price Forecasting** | AI-powered price trends and 12-month forecasts using historical registration data + infrastructure projects. |
+| **Property Scanner** | 3-level scanner across property portals, RERA registrations, and web sources. Matches against your buyer brief. |
+
+### Decision Support
+
+| Feature | Description |
+|---------|-------------|
+| **Financial Analysis** | Affordability stress test, bank comparison (saves Rs 5-15L), buy vs rent, tax optimization, prepayment strategy, refinancing. |
+| **Negotiation Intel** | Data-backed suggested offer price, negotiation scripts, hidden cost checklist, walk-away price. |
+| **Agreement Review** | Parses builder agreements to flag one-sided clauses, missing RERA protections, vague specifications, and legal traps. Catches 80% of what a property lawyer would find. |
+| **Site Visit Guide** | Generates a property-specific checklist tailored to the risks flagged in the evaluation. Questions to ask builders and residents. |
+| **Due Diligence** | 7-section pre-purchase checklist: RERA, builder, litigation, price, title, physical, financial. |
+| **Property Comparison** | Side-by-side comparison with weighted scoring, head-to-head metrics, and AI recommendation. |
+
+### Post-Purchase Protection
+
+| Feature | Description |
+|---------|-------------|
+| **Delay Tracking** | Calculates RERA Section 18 delay compensation (SBI MCLR + 2%) if builder misses possession date. Most buyers never claim this. |
+| **OC & Society Tracking** | Monitors Occupancy Certificate status, society formation timeline (mandatory within 3 months of OC), maintenance corpus transfer. |
+| **RERA Complaint Drafting** | Drafts a formal RERA complaint with proper legal references (Sections 11, 13, 14, 18, 19) when your rights are violated. |
+| **Defect Liability Tracking** | Tracks the 5-year structural defect liability period. Helps you enforce rectification at builder's cost. |
+
+### Infrastructure
+
+| Feature | Description |
+|---------|-------------|
 | **Telegram Alerts** | Get notified on Telegram when matching properties hit the market. |
 | **Batch Processing** | Evaluate 10+ properties in parallel with sub-agents. |
-| **Financial Analysis** | Affordability stress test, bank comparison (saves Rs 5-15L), buy vs rent, tax optimization, prepayment strategy, refinancing. |
-| **Pipeline Tracker** | Track every property from discovery through purchase. |
+| **Pipeline Tracker** | Track every property from discovery through purchase. Status management, pipeline health checks, filtering. |
+| **Dashboard TUI** | Go + Bubble Tea terminal UI with Catppuccin Mocha theme. 6 filter tabs, 4 sort modes. |
 
 > **This is NOT a spam tool.** PropOps helps you make informed decisions. It never contacts builders or submits applications. You always have the final call.
 
@@ -86,6 +115,9 @@ claude
 /propops finance            Financial analysis (affordability, EMI, bank comparison)
 /propops finance buy-vs-rent  Should you buy or rent this property?
 /propops finance refinance   Refinancing strategy for existing loan
+/propops agreement-review   Review a builder agreement for one-sided clauses
+/propops site-visit         Generate a property-specific site visit checklist
+/propops post-purchase      Track delays, calculate penalties, draft RERA complaints
 ```
 
 Or just paste a property URL or listing -- PropOps auto-detects it and runs the full pipeline.
@@ -151,7 +183,7 @@ propops/
 +-- buyer-brief.md            # Your requirements (created during onboarding)
 +-- config/
 |   +-- profile.yml           # Your identity & preferences
-+-- modes/                    # 16 skill modes
++-- modes/                    # 19 skill modes
 |   +-- _shared.md            # Scoring system & global rules
 |   +-- evaluate.md           # 7-block A-G evaluation
 |   +-- auto-pipeline.md      # Paste URL -> full report
@@ -163,6 +195,9 @@ propops/
 |   +-- compare.md            # Side-by-side property comparison
 |   +-- litigation.md         # Legal case search
 |   +-- due-diligence.md      # Pre-purchase checklist
+|   +-- agreement-review.md   # Builder agreement legal review
+|   +-- site-visit.md         # Property-specific site visit guide
+|   +-- post-purchase.md      # Delay tracking, OC, RERA complaints
 |   +-- alert.md              # Telegram alert configuration
 |   +-- tracker.md            # Pipeline management
 |   +-- batch.md              # Parallel evaluation
@@ -174,6 +209,8 @@ propops/
 |   +-- forecast-engine.mjs   # Price trend analysis
 |   +-- merge-tracker.mjs     # Tracker merge + dedup
 |   +-- verify-pipeline.mjs   # Data health check
+|   +-- scrapers/
+|       +-- state-registry.mjs # Central config for all Indian state portals
 +-- data/                     # Tracker, cache, history (gitignored)
 +-- reports/                  # Generated evaluation reports (gitignored)
 +-- templates/                # Config templates
@@ -202,8 +239,24 @@ Run /propops evaluate for full report
 
 ## Currently Supported
 
-- **Maharashtra** -- IGRS, MahaRERA, Pune & Mumbai districts
-- More states coming (UP, Karnataka, Telangana planned)
+### State-by-State Support
+
+| State | IGRS (Actual Prices) | RERA | eCourts | Status |
+|-------|---------------------|------|---------|--------|
+| **Maharashtra** (Mumbai, Pune, Thane) | Full | Full | Full | ✅ Production |
+| **Karnataka** (Bangalore) | Planned | Planned | Via API | 🚧 In development |
+| **Telangana** (Hyderabad) | Planned | Planned | Via API | 🚧 In development |
+| **Delhi NCR** (Delhi, Gurgaon, Noida) | Planned | Planned | Via API | 🚧 In development |
+| **Tamil Nadu** (Chennai) | Planned | Planned | Via API | 📋 Roadmap |
+| **Uttar Pradesh** | Planned | Planned | Via API | 📋 Roadmap |
+
+**eCourts litigation search works nationally** via the Kleopatra API wrapper — all states covered for legal case lookups. IGRS and RERA are state-specific and need per-state scrapers.
+
+The state registry (`scripts/scrapers/state-registry.mjs`) defines all configurations. Adding a new state is as simple as writing one scraper file matching the base interface.
+
+### Contributing a New State
+
+The highest-impact contribution to PropOps is adding IGRS/RERA scraper support for another Indian state. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Tech Stack
 

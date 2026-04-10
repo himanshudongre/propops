@@ -20,6 +20,9 @@ Read CLAUDE.md in the project root for full instructions. Then execute the PropO
 | `/propops finance` | Financial analysis (affordability, EMI, bank comparison, tax) |
 | `/propops finance buy-vs-rent` | Should you buy or rent this property? |
 | `/propops finance refinance` | Refinancing strategy for existing loan |
+| `/propops agreement-review` | Review a builder agreement for one-sided clauses and missing RERA protections |
+| `/propops site-visit` | Generate a property-specific site visit checklist |
+| `/propops post-purchase` | Track delays, OC status, society formation, draft RERA complaints |
 
 ## Routing
 

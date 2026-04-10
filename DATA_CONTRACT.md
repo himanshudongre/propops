@@ -25,6 +25,7 @@ These files belong to the user. Updates will NEVER modify, replace, or delete th
 | `data/registration-cache/*` | Cached IGRS results |
 | `data/builder-cache/*` | Cached builder/RERA data |
 | `data/price-history/*` | Historical price trend data |
+| `data/post-purchase/*` | Per-property tracking after booking (delays, OC, complaints) |
 | `reports/*` | Generated evaluation reports |
 
 ## System Layer (auto-updatable)
@@ -46,11 +47,16 @@ These files define system behavior. They can be replaced by updates without losi
 | `modes/compare.md` | Property comparison mode |
 | `modes/due-diligence.md` | Pre-purchase checklist mode |
 | `modes/finance.md` | Affordability, bank comparison, buy-vs-rent, tax, refinancing |
+| `modes/agreement-review.md` | Builder agreement parser and legal risk checker |
+| `modes/site-visit.md` | Property-specific site visit guide and checklist |
+| `modes/post-purchase.md` | Delay tracking, OC, society formation, RERA complaint drafting |
 | `modes/alert.md` | Telegram alert configuration mode |
 | `modes/tracker.md` | Pipeline viewer mode |
 | `modes/batch.md` | Batch evaluation mode |
 | `modes/_profile.template.md` | Template for user's _profile.md |
 | `scripts/*.mjs` | All utility scripts |
+| `scripts/scrapers/*.mjs` | State-specific scrapers (Karnataka, Telangana, Delhi NCR, etc.) |
+| `scripts/scrapers/state-registry.mjs` | Central registry of state portal configurations |
 | `batch/batch-prompt.md` | Batch worker prompt |
 | `batch/batch-runner.sh` | Batch orchestrator |
 | `templates/*` | Configuration templates |

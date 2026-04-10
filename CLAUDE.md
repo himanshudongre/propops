@@ -141,6 +141,14 @@ If yes, guide through BotFather setup, create `telegram-config.yml`.
 | Asks "should I buy or rent?" | `finance` |
 | Asks about tax benefits of property | `finance` |
 | Wants prepayment or refinancing strategy | `finance` |
+| Uploads or pastes a builder agreement | `agreement-review` |
+| Asks to review an agreement for sale or sale deed | `agreement-review` |
+| Planning a site visit | `site-visit` |
+| Asks what to check when visiting a property | `site-visit` |
+| Booked property, tracking construction/delays | `post-purchase` |
+| Possession is delayed, asks about their rights | `post-purchase` |
+| Needs to draft a RERA complaint | `post-purchase` |
+| Asks about OC or society formation | `post-purchase` |
 
 ### Buyer Brief Source of Truth
 
