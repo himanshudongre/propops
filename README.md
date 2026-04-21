@@ -81,11 +81,31 @@ A common critique of naive builder evaluation (raised by a Reddit user during Pr
 
 > **This is NOT a spam tool.** PropOps helps you make informed decisions. It never contacts builders or submits applications. You always have the final call.
 
-## New here? Not a developer?
+## Install in one command
 
-**Read [GETTING-STARTED.md](GETTING-STARTED.md) first.** It's a complete beginner-friendly walkthrough that assumes zero technical experience — Mac and Windows both covered. Takes about 30 minutes to set up, and then PropOps is yours forever.
+### Mac / Linux
 
-## Quick Start (Developers)
+```bash
+curl -fsSL https://raw.githubusercontent.com/himanshudongre/propops/main/install.sh | bash
+```
+
+### Windows (in PowerShell)
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/himanshudongre/propops/main/install.ps1 | iex
+```
+
+The installer handles **everything automatically**: installs Node.js, Claude Code, and Playwright; downloads PropOps; creates a desktop launcher. Takes about 5 minutes.
+
+After it finishes, double-click the PropOps icon on your Desktop to launch.
+
+**New to PropOps?** Read [GETTING-STARTED.md](GETTING-STARTED.md) for the full walkthrough including real-world tutorials (evaluating a property, checking a builder, negotiating with data, reviewing agreements, etc.). No technical experience required.
+
+**You'll also need:** A Claude Pro or Max subscription ([sign up here](https://claude.ai)) — this powers the AI behind PropOps.
+
+## Quick Start (Manual / Developers)
+
+If you'd rather set up manually instead of running the installer:
 
 ```bash
 # 1. Clone and install
