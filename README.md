@@ -81,7 +81,11 @@ A common critique of naive builder evaluation (raised by a Reddit user during Pr
 
 > **This is NOT a spam tool.** PropOps helps you make informed decisions. It never contacts builders or submits applications. You always have the final call.
 
-## Quick Start
+## New here? Not a developer?
+
+**Read [GETTING-STARTED.md](GETTING-STARTED.md) first.** It's a complete beginner-friendly walkthrough that assumes zero technical experience — Mac and Windows both covered. Takes about 30 minutes to set up, and then PropOps is yours forever.
+
+## Quick Start (Developers)
 
 ```bash
 # 1. Clone and install
@@ -425,7 +429,8 @@ MIT
 
 ## Documentation
 
-- [SETUP.md](docs/SETUP.md) -- Installation and configuration guide
+- **[GETTING-STARTED.md](GETTING-STARTED.md)** -- **Start here if you're new.** Complete beginner-friendly walkthrough (Mac + Windows, no technical experience required)
+- [SETUP.md](docs/SETUP.md) -- Installation and configuration guide (developers)
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) -- System design and data flow
 - [DATA-SOURCES.md](docs/DATA-SOURCES.md) -- Government portals and trust hierarchy
 
