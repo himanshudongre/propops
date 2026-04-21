@@ -11,6 +11,41 @@ AI-powered property transparency tool built on Claude Code. Scrapes government r
 
 ---
 
+## 🚀 Start Here
+
+### New to PropOps? → **[Read GETTING-STARTED.md](GETTING-STARTED.md)**
+
+Complete step-by-step walkthrough with real-world tutorials (evaluating a property, checking a builder, negotiating with data, reviewing agreements). **Built for non-technical users.** Mac and Windows covered. Takes about 5 minutes to set up.
+
+### Or, install right now (one command)
+
+**Mac / Linux** (paste into Terminal):
+```bash
+curl -fsSL https://raw.githubusercontent.com/himanshudongre/propops/main/install.sh | bash
+```
+
+**Windows** (paste into PowerShell):
+```powershell
+iwr -useb https://raw.githubusercontent.com/himanshudongre/propops/main/install.ps1 | iex
+```
+
+The installer handles everything automatically — installs Node.js, Claude Code, and Playwright; downloads PropOps; creates a desktop launcher. After it finishes, **double-click the PropOps icon on your Desktop** to launch. Type `/propops` inside Claude Code and you're running.
+
+### How the AI part works (cost options)
+
+PropOps runs on Claude Code, which needs to authenticate with Anthropic. You have two paths:
+
+| Option | Cost | Best For |
+|---|---|---|
+| **Claude Pro subscription** | ~₹1,700/month (~$20), cancel anytime | Regular users. Simplest. Sign up at [claude.ai](https://claude.ai). Unlimited within fair-use limits. |
+| **Anthropic API key** | Pay-per-token, typically ₹10-40 per property evaluation | Light users or trying it out. Sign up at [console.anthropic.com](https://console.anthropic.com) — new accounts get free credits (~$5), enough for 10-20 evaluations to test. |
+
+**Can I use it fully free?** Not long-term. But with a fresh Anthropic account, you get enough free credits to evaluate 10-20 properties before paying a rupee. That's plenty to decide whether PropOps is worth it. After that, either subscribe to Claude Pro or add a few hundred rupees to your Anthropic API balance — API is cheaper if you use PropOps casually (once or twice a week), Claude Pro is cheaper if you use it heavily.
+
+**No hidden costs in PropOps itself.** It's MIT open-source, forever. The only cost is the AI that powers it.
+
+---
+
 ## The Problem
 
 Indian real estate is one of the most opaque markets in the world:
@@ -80,28 +115,6 @@ A common critique of naive builder evaluation (raised by a Reddit user during Pr
 | **Dashboard TUI** | Go + Bubble Tea terminal UI with Catppuccin Mocha theme. 6 filter tabs, 4 sort modes. |
 
 > **This is NOT a spam tool.** PropOps helps you make informed decisions. It never contacts builders or submits applications. You always have the final call.
-
-## Install in one command
-
-### Mac / Linux
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/himanshudongre/propops/main/install.sh | bash
-```
-
-### Windows (in PowerShell)
-
-```powershell
-iwr -useb https://raw.githubusercontent.com/himanshudongre/propops/main/install.ps1 | iex
-```
-
-The installer handles **everything automatically**: installs Node.js, Claude Code, and Playwright; downloads PropOps; creates a desktop launcher. Takes about 5 minutes.
-
-After it finishes, double-click the PropOps icon on your Desktop to launch.
-
-**New to PropOps?** Read [GETTING-STARTED.md](GETTING-STARTED.md) for the full walkthrough including real-world tutorials (evaluating a property, checking a builder, negotiating with data, reviewing agreements, etc.). No technical experience required.
-
-**You'll also need:** A Claude Pro or Max subscription ([sign up here](https://claude.ai)) — this powers the AI behind PropOps.
 
 ## Quick Start (Manual / Developers)
 

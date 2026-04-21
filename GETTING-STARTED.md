@@ -28,8 +28,20 @@ It pulls real answers from government databases (IGRS, MahaRERA, eCourts) that a
 
 - **A computer** — Mac or Windows (not phone-compatible yet).
 - **Internet connection** — PropOps talks to government websites.
-- **A Claude Pro or Max subscription** — sign up at [https://claude.ai](https://claude.ai). Costs ~₹1,700/month, cancel anytime.
+- **One of these to power the AI** (pick whichever suits your usage):
+  - **Claude Pro subscription** — ~₹1,700/month (~$20), unlimited usage within fair-use limits. Simplest. Sign up at [claude.ai](https://claude.ai). Cancel anytime.
+  - **Anthropic API key** — pay-per-token, typically ₹10-40 per property evaluation. Sign up at [console.anthropic.com](https://console.anthropic.com). **New accounts get ~$5 of free credits, enough for 10-20 evaluations — so you can try PropOps fully free before paying anything.**
 - **About 5 minutes** for this one-time setup.
+
+### Which should I pick?
+
+| If you plan to... | Use |
+|---|---|
+| Just try PropOps for a few days | **Anthropic API key** (free trial credits cover 10-20 evaluations) |
+| Use PropOps casually (1-2 times a week) | **Anthropic API key** (probably ₹100-400/month in usage) |
+| Use PropOps heavily (daily, or during active property hunting) | **Claude Pro subscription** (₹1,700/month flat, unlimited) |
+
+You can switch between the two later. Many people start with the API free credits to test the tool, then upgrade to Claude Pro when they decide it's worth the monthly cost.
 
 ---
 
