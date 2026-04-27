@@ -29,6 +29,7 @@ import { chromium } from 'playwright';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { textMatchesName } from './name-utils.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..', '..');
@@ -41,11 +42,12 @@ const TNRERA = {
   home: 'https://rera.tn.gov.in/',
 
   // Annual listing URL pattern
+  onlineBuildingUrl: 'https://www.rera.tn.gov.in/registered-building/tn',
   buildingProjectUrl: (year) => `https://www.rera.tn.gov.in/cms/reg_projects_tamilnadu/Building/${year}.php`,
   layoutProjectUrl: (year) => `https://www.rera.tn.gov.in/cms/reg_projects_tamilnadu/Layout/${year}.php`,
 
-  // Default: latest 5 years
-  defaultYears: [2021, 2022, 2023, 2024, 2025, 2026]
+  // The current online Building registry exposes a year selector for 2023+.
+  defaultYears: [2023, 2024, 2025, 2026]
 };
 
 // ─── Cache Helpers ──────────────────────────────────────────
@@ -76,11 +78,12 @@ function writeCache(type, key, data) {
 // ─── List Projects by Year ──────────────────────────────────
 
 async function listProjectsByYear(year, type = 'Building') {
-  const cacheKey = `${year}-${type}`;
+  const useOnlineRegistry = type === 'Building';
+  const cacheKey = `${useOnlineRegistry ? 'online' : 'legacy'}-${year}-${type}`;
   const cached = readCache('list', cacheKey);
   if (cached) return cached;
 
-  const url = type === 'Layout' ? TNRERA.layoutProjectUrl(year) : TNRERA.buildingProjectUrl(year);
+  const url = useOnlineRegistry ? TNRERA.onlineBuildingUrl : TNRERA.layoutProjectUrl(year);
 
   const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
   const page = await browser.newPage();
@@ -89,6 +92,34 @@ async function listProjectsByYear(year, type = 'Building') {
     console.error(`Fetching TNRERA ${type} projects for ${year}...`);
     await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
     await page.waitForTimeout(2000);
+
+    if (useOnlineRegistry) {
+      const yearSelect = await page.$('select[name="year"], #year');
+      if (!yearSelect) {
+        return {
+          year,
+          type,
+          source: 'TNRERA',
+          source_url: url,
+          scraped_at: new Date().toISOString(),
+          status: 'failed',
+          error_code: 'SELECTOR_DRIFT',
+          error: 'TNRERA year selector not found on online building registry',
+          results_count: 0,
+          results: []
+        };
+      }
+
+      const selectedYear = await page.$eval('select[name="year"], #year', el => el.value).catch(() => '');
+      if (selectedYear !== String(year)) {
+        await yearSelect.selectOption(String(year));
+        await Promise.all([
+          page.waitForLoadState('domcontentloaded', { timeout: 30000 }).catch(() => {}),
+          page.click('#submitBtn, button[type="submit"]')
+        ]);
+        await page.waitForTimeout(3000);
+      }
+    }
 
     // Check for 404 / empty page
     const title = await page.title();
@@ -107,6 +138,41 @@ async function listProjectsByYear(year, type = 'Building') {
 
     // Extract from HTML table (typical TNRERA format)
     const projects = await page.evaluate(() => {
+      const htmlToText = (value) => {
+        const div = document.createElement('div');
+        div.innerHTML = String(value || '');
+        return div.textContent?.replace(/\s+/g, ' ').trim() || '';
+      };
+
+      const htmlToFirstLink = (value) => {
+        const div = document.createElement('div');
+        div.innerHTML = String(value || '');
+        return div.querySelector('a')?.href || '';
+      };
+
+      const dataTable = window.jQuery?.fn?.dataTable
+        ? window.jQuery('#example1, table.DataTable').DataTable?.()
+        : null;
+
+      if (dataTable) {
+        const rows = dataTable.rows().data().toArray();
+        return rows.map(row => {
+          const cells = Array.isArray(row) ? row : Object.values(row);
+          return {
+            s_no_: htmlToText(cells[0]),
+            project_registration_no_: htmlToText(cells[1]),
+            name_and_address_of_the_promoter: htmlToText(cells[2]),
+            project_details_and_address: htmlToText(cells[3]),
+            approval_details: htmlToText(cells[4]),
+            project_completion_date: htmlToText(cells[5]),
+            other_details: htmlToText(cells[6]),
+            other_details_url: htmlToFirstLink(cells[6]),
+            form_c_url: htmlToFirstLink(cells[7]),
+            current_status_of_the_project: htmlToText(cells[8])
+          };
+        }).filter(row => row.project_registration_no_ || row.project_details_and_address);
+      }
+
       const tables = document.querySelectorAll('table');
       let data = [];
 
@@ -166,7 +232,7 @@ async function listProjectsByYear(year, type = 'Building') {
       const rawProjectDetails = p.project_details_and_address || p.project_name || p.name_of_the_project || p.project || p.col_1 || '';
 
       // Extract clean registration number (strip "dated XX/XX/XXXX" suffix)
-      const regNoClean = rawRegNo.split(/\s+dated\s+/i)[0].trim();
+      const regNoClean = rawRegNo.replace(/\s*dated\s+.*$/i, '').trim();
 
       // Extract promoter name — prefer M/s entity name if present, else individual name
       // Raw format examples:
@@ -187,7 +253,7 @@ async function listProjectsByYear(year, type = 'Building') {
       }
 
       // Extract project name from "Project Name: X -" prefix
-      const projectNameMatch = rawProjectDetails.match(/project\s*name\s*[:\-"]\s*["']?([^"'\n\-]+)/i);
+      const projectNameMatch = rawProjectDetails.match(/project\s*name\s*[:\-"]\s*["']?(.+?)(?:registration\s*for|building\s+permission|proposed\s+construction|$)/i);
       const projectNameClean = projectNameMatch ? projectNameMatch[1].replace(/["']/g, '').trim() : '';
 
       // Extract district/location from project details (last location mentioned)
@@ -200,9 +266,9 @@ async function listProjectsByYear(year, type = 'Building') {
         promoter_name: promoterClean || rawPromoter.slice(0, 80).trim(),
         registration_no: regNoClean,
         district: districtClean,
-        status: p.status || p.project_status || '',
+        status: p.current_status_of_the_project || p.status || p.project_status || '',
         completion_date: p.project_completion_date || '',
-        detail_url: p.project_name_url || p.sr_no_url || '',
+        detail_url: p.other_details_url || p.project_name_url || p.sr_no_url || '',
         _raw: p  // Keep raw data for downstream consumers
       };
     });
@@ -251,10 +317,9 @@ async function searchProjects(name, options = {}) {
     const yearResults = await listProjectsByYear(year, type);
     if (yearResults.results && yearResults.results.length > 0) {
       const matches = yearResults.results.filter(p => {
-        const projectLower = (p.project_name || '').toLowerCase();
-        const promoterLower = (p.promoter_name || '').toLowerCase();
-        const searchLower = name.toLowerCase();
-        return projectLower.includes(searchLower) || promoterLower.includes(searchLower);
+        const projectLower = p.project_name || '';
+        const promoterLower = p.promoter_name || '';
+        return textMatchesName(projectLower, name) || textMatchesName(promoterLower, name);
       });
 
       matches.forEach(m => {
@@ -286,8 +351,8 @@ async function getBuilderProjects(builderName, years = TNRERA.defaultYears) {
     const yearResults = await listProjectsByYear(year, 'Building');
     if (yearResults.results) {
       const builderProjects = yearResults.results.filter(p => {
-        const promoter = (p.promoter_name || '').toLowerCase();
-        return promoter.includes(builderName.toLowerCase());
+        const promoter = p.promoter_name || '';
+        return textMatchesName(promoter, builderName);
       });
 
       builderProjects.forEach(p => {

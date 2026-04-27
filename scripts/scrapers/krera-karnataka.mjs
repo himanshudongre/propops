@@ -26,6 +26,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { saveDebugSnapshot, logPageStructure } from './debug-helper.mjs';
+import { textMatchesName } from './name-utils.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..', '..');
@@ -126,8 +127,16 @@ async function listProjects(options = {}) {
     // Submit the form — K-RERA requires this to get any results
     const submitBtn = await page.$('input[type="submit"][name="btn1"], input[type="submit"], button[type="submit"]');
     if (submitBtn) {
-      await submitBtn.click();
-      await page.waitForLoadState('networkidle');
+      try {
+        await submitBtn.click({ timeout: 5000 });
+      } catch (error) {
+        console.error(`[K-RERA] Submit click blocked (${error.message}); using form submit() fallback.`);
+        await page.evaluate(() => {
+          const form = document.querySelector('form[name="registrationForm"], form');
+          if (form) form.submit();
+        });
+      }
+      await page.waitForLoadState('domcontentloaded', { timeout: 30000 }).catch(() => {});
       await page.waitForTimeout(3000);
     } else {
       console.error(`[K-RERA] Submit button not found. Using form submit() fallback.`);
@@ -135,7 +144,7 @@ async function listProjects(options = {}) {
         const form = document.querySelector('form[name="registrationForm"], form');
         if (form) form.submit();
       });
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState('domcontentloaded', { timeout: 30000 }).catch(() => {});
       await page.waitForTimeout(3000);
     }
 
@@ -306,11 +315,10 @@ async function searchProjects(name) {
   // K-RERA always returns ALL projects in JS arrays — filter client-side
   const listing = await listProjects({ projectName: name, maxPages: 10 });
 
-  const nameLower = name.toLowerCase();
   const matches = (listing.results || []).filter(p => {
-    const projLower = (p.project_name || '').toLowerCase();
-    const promoterLower = (p.promoter_name || '').toLowerCase();
-    return projLower.includes(nameLower) || promoterLower.includes(nameLower);
+    const projLower = p.project_name || '';
+    const promoterLower = p.promoter_name || '';
+    return textMatchesName(projLower, name) || textMatchesName(promoterLower, name);
   });
 
   const output = {
@@ -338,10 +346,9 @@ async function getBuilderProjects(builderName) {
   // K-RERA returns all projects; filter client-side by promoter name
   const listing = await listProjects({ firmName: builderName, maxPages: 10 });
 
-  const nameLower = builderName.toLowerCase();
   const builderProjects = (listing.results || []).filter(p => {
-    const promoter = (p.promoter_name || '').toLowerCase();
-    return promoter.includes(nameLower);
+    const promoter = p.promoter_name || '';
+    return textMatchesName(promoter, builderName);
   });
 
   const output = {

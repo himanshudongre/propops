@@ -30,6 +30,7 @@ import { chromium } from 'playwright';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { textMatchesName } from './name-utils.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..', '..');
@@ -39,7 +40,7 @@ const CACHE_VALIDITY_DAYS = 30;
 const UPRERA = {
   base: 'https://www.up-rera.in',
   home: 'https://www.up-rera.in/',
-  projects: 'https://www.up-rera.in/projects',
+  projects: 'https://uprera.azurewebsites.net/View_projects.aspx',
   legacy_projects: 'https://uprera.azurewebsites.net/View_projects.aspx',
   complaints: 'https://www.up-rera.in/complaints',
 
@@ -253,6 +254,72 @@ async function listProjects(options = {}) {
   }
 }
 
+// ─── Promoter Registry Lookup ──────────────────────────────
+
+async function listPromotersFromRegistry(name) {
+  const browser = await launchBrowser();
+  const page = await browser.newPage();
+
+  try {
+    console.error(`Fetching UP-RERA promoter registry for "${name}"...`);
+    await page.goto(UPRERA.legacy_projects, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.waitForSelector('#ctl00_ContentPlaceHolder1_ddl_prm option', { state: 'attached', timeout: 30000 });
+
+    const matches = await page.$$eval('#ctl00_ContentPlaceHolder1_ddl_prm option', (options, searchName) => {
+      const normalise = value => String(value || '')
+        .toLowerCase()
+        .replace(/&/g, ' and ')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const needle = normalise(searchName);
+      const firstToken = needle.split(' ')[0];
+
+      return Array.from(options)
+        .map(option => {
+          const text = option.textContent?.replace(/\s+/g, ' ').trim() || '';
+          const registration = text.match(/\((UPRERAPRM\d+)\)/i)?.[1] || '';
+          const promoterName = text.replace(/\s*\(UPRERAPRM\d+\)\s*$/i, '').trim();
+          return { promoter_name: promoterName, registration_no: registration };
+        })
+        .filter(row => {
+          const promoter = normalise(row.promoter_name);
+          return promoter.includes(needle) || (firstToken.length >= 3 && promoter.includes(firstToken));
+        })
+        .filter(row => row.promoter_name && row.registration_no);
+    }, name);
+
+    return {
+      query: name,
+      source: 'UP-RERA',
+      source_url: UPRERA.legacy_projects,
+      scraped_at: new Date().toISOString(),
+      results_count: matches.length,
+      results: matches.map(row => ({
+        ...row,
+        project_name: '',
+        promoter_registry_match: true,
+        status: 'promoter_registered',
+        detail_url: UPRERA.legacy_projects
+      }))
+    };
+  } catch (error) {
+    console.error(`[UP-RERA] Promoter registry lookup failed: ${error.message}`);
+    return {
+      query: name,
+      source: 'UP-RERA',
+      source_url: UPRERA.legacy_projects,
+      status: 'failed',
+      error_code: 'SELECTOR_DRIFT',
+      error: error.message,
+      results_count: 0,
+      results: []
+    };
+  } finally {
+    await browser.close();
+  }
+}
+
 // ─── Search by Project Name ────────────────────────────────
 
 async function searchProjects(name, options = {}) {
@@ -267,10 +334,9 @@ async function searchProjects(name, options = {}) {
     const listing = await listProjects({ district, maxPages: 5 });
     if (listing.results) {
       const matches = listing.results.filter(p => {
-        const projLower = (p.project_name || '').toLowerCase();
-        const promoterLower = (p.promoter_name || '').toLowerCase();
-        const nameLower = name.toLowerCase();
-        return projLower.includes(nameLower) || promoterLower.includes(nameLower);
+        const projLower = p.project_name || '';
+        const promoterLower = p.promoter_name || '';
+        return textMatchesName(projLower, name) || textMatchesName(promoterLower, name);
       });
       allMatches.push(...matches);
     }
@@ -298,27 +364,21 @@ async function getBuilderProjects(builderName) {
   const cached = readCache('builder', builderName);
   if (cached) return cached;
 
-  const allProjects = [];
-
-  // Search across NCR districts (where most UP real estate activity is)
-  for (const district of UPRERA.ncr_districts) {
-    const listing = await listProjects({ district, maxPages: 10 });
-    if (listing.results) {
-      const builderProjects = listing.results.filter(p => {
-        const promoter = (p.promoter_name || '').toLowerCase();
-        return promoter.includes(builderName.toLowerCase());
-      });
-      allProjects.push(...builderProjects);
-    }
-  }
+  const promoterRegistry = await listPromotersFromRegistry(builderName);
+  const allProjects = promoterRegistry.results || [];
 
   const output = {
     builder: builderName,
     source: 'UP-RERA',
+    source_url: promoterRegistry.source_url,
     districts_searched: UPRERA.ncr_districts,
     scraped_at: new Date().toISOString(),
     total_projects: allProjects.length,
+    results_count: allProjects.length,
     projects: allProjects,
+    results: allProjects,
+    ...(promoterRegistry.error_code && { status: promoterRegistry.status, error_code: promoterRegistry.error_code, error: promoterRegistry.error }),
+    note: 'UP-RERA project search is CAPTCHA-gated; this result is from the public promoter registry dropdown.',
     summary: {
       by_district: allProjects.reduce((acc, p) => {
         const d = p.district || 'Unknown';
