@@ -27,6 +27,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { saveDebugSnapshot, logPageStructure } from './scrapers/debug-helper.mjs';
+import { buildNameVariants } from './scrapers/name-utils.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -390,20 +391,40 @@ async function searchProjects(query, options = {}) {
   if (cached) return cached;
 
   let result;
+  let queryVariantUsed = query;
+  const queryVariants = buildNameVariants(query);
+  if (queryVariants.length === 0) queryVariants.push(query);
 
   // Try Portal A first (simpler, Drupal)
   try {
-    result = await searchProjectsPortalA(query, options);
-    if (result.results_count > 0) {
-      console.error(`[Portal A] Found ${result.results_count} results`);
-    } else {
+    for (const queryVariant of queryVariants) {
+      result = await searchProjectsPortalA(queryVariant, options);
+      queryVariantUsed = queryVariant;
+      if (result.results_count > 0) {
+        console.error(`[Portal A] Found ${result.results_count} results for "${queryVariant}"`);
+        break;
+      }
+    }
+
+    if (!result || result.results_count === 0) {
       console.error(`[Portal A] No results, trying Portal B...`);
-      result = await searchProjectsPortalB(query, options);
+      for (const queryVariant of queryVariants) {
+        result = await searchProjectsPortalB(queryVariant, options);
+        queryVariantUsed = queryVariant;
+        if (result.results_count > 0) {
+          console.error(`[Portal B] Found ${result.results_count} results for "${queryVariant}"`);
+          break;
+        }
+      }
     }
   } catch (err) {
     console.error(`[Portal A] Error: ${err.message}. Trying Portal B...`);
     try {
-      result = await searchProjectsPortalB(query, options);
+      for (const queryVariant of queryVariants) {
+        result = await searchProjectsPortalB(queryVariant, options);
+        queryVariantUsed = queryVariant;
+        if (result.results_count > 0) break;
+      }
     } catch (err2) {
       console.error(`[Portal B] Also failed: ${err2.message}`);
       result = { portal: 'none', error: `Portal A: ${err.message}; Portal B: ${err2.message}`, results: [] };
@@ -419,6 +440,7 @@ async function searchProjects(query, options = {}) {
     scraped_at: new Date().toISOString(),
     results_count: result.results?.length || 0,
     results: result.results || [],
+    ...(queryVariantUsed !== query && { query_variant_used: queryVariantUsed }),
     ...(result.error && { error: result.error })
   };
 
@@ -441,47 +463,64 @@ async function searchPromoters(name) {
     await page.goto(PORTAL_A.promoterSearch, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(3000);
 
-    // Fill promoter name — try visible inputs only
-    const filled = await page.evaluate((searchName) => {
-      const inputs = Array.from(document.querySelectorAll('input[type="text"], input[type="search"]'));
-      const visible = inputs.filter(i => {
-        const rect = i.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0 && !i.disabled && !i.readOnly;
-      });
-      if (visible.length === 0) return false;
-      // Use the first visible text input (or one matching promoter/name)
-      const target = visible.find(i =>
-        (i.name && /promoter|name|search/i.test(i.name)) ||
-        (i.id && /promoter|name|search/i.test(i.id))
-      ) || visible[0];
-      target.focus();
-      target.value = searchName;
-      target.dispatchEvent(new Event('input', { bubbles: true }));
-      target.dispatchEvent(new Event('change', { bubbles: true }));
-      return true;
-    }, name);
+    const promoterInputSelector = '#promoter-complaint-form input[name="promoter_complaint_name"], #maharerapromoter';
+    const promoterSubmitSelector = '#promoter-complaint-form input[type="submit"][value="Search"], #promoter-complaint-form button[type="submit"]:has-text("Search")';
 
-    if (!filled) {
-      console.error(`[Portal A] No visible input field found`);
+    const promoterInput = page.locator(promoterInputSelector).first();
+    if ((await promoterInput.count()) === 0) {
+      console.error(`[Portal A] Promoter complaint form input not found`);
       await saveDebugSnapshot(page, 'maharera-promoter-no-input');
+      return {
+        query: name,
+        source: 'MahaRERA',
+        source_url: PORTAL_A.promoterSearch,
+        status: 'failed',
+        error_code: 'SELECTOR_DRIFT',
+        error: 'Promoter complaint form input not found',
+        results_count: 0,
+        results: []
+      };
     }
 
-    // Submit — use evaluate to click visible submit buttons
-    await page.evaluate(() => {
-      const buttons = Array.from(document.querySelectorAll('input[type="submit"], button[type="submit"], button.form-submit, .form-submit'));
-      const visible = buttons.filter(b => {
-        const rect = b.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0 && !b.disabled;
-      });
-      if (visible.length > 0) visible[0].click();
-    });
+    await promoterInput.fill(name);
 
+    const submitButton = page.locator(promoterSubmitSelector).first();
+    if ((await submitButton.count()) === 0) {
+      console.error(`[Portal A] Promoter complaint form submit button not found`);
+      await saveDebugSnapshot(page, 'maharera-promoter-no-submit');
+      return {
+        query: name,
+        source: 'MahaRERA',
+        source_url: PORTAL_A.promoterSearch,
+        status: 'failed',
+        error_code: 'SELECTOR_DRIFT',
+        error: 'Promoter complaint form submit button not found',
+        results_count: 0,
+        results: []
+      };
+    }
+
+    await submitButton.click();
     await page.waitForLoadState('domcontentloaded', { timeout: 30000 }).catch(() => {});
-    await page.waitForTimeout(3000);
+    await page.waitForSelector('table tbody tr, text=/Showing\\s+Final\\s+0\\s+Result|No\\s+records|No\\s+Record/i', { timeout: 15000 }).catch(() => {});
+
+    if (/\/search\/node/i.test(page.url())) {
+      await saveDebugSnapshot(page, 'maharera-promoter-wrong-form-submit');
+      return {
+        query: name,
+        source: 'MahaRERA',
+        source_url: page.url(),
+        status: 'failed',
+        error_code: 'SELECTOR_DRIFT',
+        error: 'Promoter search submitted the site-wide search form instead of promoter complaint form',
+        results_count: 0,
+        results: []
+      };
+    }
 
     // Extract results — try multiple table patterns
     const results = await page.evaluate(() => {
-      const promoterKeywords = ['promoter', 'name', 'registration', 'district'];
+      const promoterKeywords = ['promoter', 'name', 'complaint', 'view'];
       const tables = document.querySelectorAll('table');
       let data = [];
 
@@ -501,12 +540,14 @@ async function searchPromoters(name) {
           const cells = Array.from(rows[i].querySelectorAll('td'));
           if (cells.length < 2) continue;
           const getText = j => cells[j]?.textContent?.trim() || '';
+          const viewCell = cells.find(cell => cell.querySelector('a')) || cells.at(-1);
           data.push({
-            promoter_name: getText(0),
-            registration_no: getText(1),
-            district: cells.length > 2 ? getText(2) : '',
-            projects_count: cells.length > 3 ? getText(3) : '',
-            detail_url: cells[0]?.querySelector('a')?.href || ''
+            promoter_name: getText(1) || getText(0),
+            registration_no: '',
+            district: '',
+            complaints_count: cells.length > 2 ? getText(2) : '',
+            projects_count: '',
+            detail_url: viewCell?.querySelector('a')?.href || ''
           });
         }
 
@@ -532,6 +573,8 @@ async function searchPromoters(name) {
       await saveDebugSnapshot(page, 'maharera-promoter-zero-results');
       const structure = await logPageStructure(page);
       console.error(`[MahaRERA] Zero results. Structure:`, JSON.stringify(structure, null, 2));
+      output.status = 'ok';
+      output.error_code = 'EMPTY_RESULTS_AFTER_SEARCH';
     }
 
     return output;

@@ -29,6 +29,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { saveDebugSnapshot, logPageStructure } from './debug-helper.mjs';
+import { textMatchesName } from './name-utils.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..', '..');
@@ -424,12 +425,25 @@ async function searchProjects(name) {
 
   for (const district of TSRERA.hyderabad_districts) {
     const listing = await listProjects({ district, maxPages: 5 });
+    if (listing.status === 'captcha_required') {
+      return {
+        status: 'captcha_required',
+        captcha_image: listing.captcha_image,
+        message: listing.message,
+        command: listing.command,
+        query: name,
+        source: 'TG-RERA',
+        districts_searched: TSRERA.hyderabad_districts,
+        scraped_at: new Date().toISOString(),
+        results_count: 0,
+        results: []
+      };
+    }
     if (listing.results) {
       const matches = listing.results.filter(p => {
-        const projLower = (p.project_name || '').toLowerCase();
-        const promoterLower = (p.promoter_name || '').toLowerCase();
-        const nameLower = name.toLowerCase();
-        return projLower.includes(nameLower) || promoterLower.includes(nameLower);
+        const projLower = p.project_name || '';
+        const promoterLower = p.promoter_name || '';
+        return textMatchesName(projLower, name) || textMatchesName(promoterLower, name);
       });
       allMatches.push(...matches);
     }
@@ -461,10 +475,25 @@ async function getBuilderProjects(builderName) {
 
   for (const district of TSRERA.hyderabad_districts) {
     const listing = await listProjects({ district, maxPages: 10 });
+    if (listing.status === 'captcha_required') {
+      return {
+        status: 'captcha_required',
+        captcha_image: listing.captcha_image,
+        message: listing.message,
+        command: listing.command,
+        builder: builderName,
+        source: 'TG-RERA',
+        districts_searched: TSRERA.hyderabad_districts,
+        scraped_at: new Date().toISOString(),
+        total_projects: 0,
+        projects: [],
+        summary: { by_district: {}, by_status: {} }
+      };
+    }
     if (listing.results) {
       const builderProjects = listing.results.filter(p => {
-        const promoter = (p.promoter_name || '').toLowerCase();
-        return promoter.includes(builderName.toLowerCase());
+        const promoter = p.promoter_name || '';
+        return textMatchesName(promoter, builderName);
       });
       allProjects.push(...builderProjects);
     }
